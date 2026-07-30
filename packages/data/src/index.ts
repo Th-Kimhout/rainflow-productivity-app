@@ -114,5 +114,10 @@ export { parseCapture } from "./nlp/parse-capture";
 export type { CaptureToken, ParsedCapture } from "./nlp/parse-capture";
 
 // ---------------------------------------------------------------------------- domain
-export { displayPriority, quadrantOf, setQuadrant } from "./domain/eisenhower";
-export type { Quadrant } from "./domain/eisenhower";
+export {
+  QUADRANT_LABELS,
+  displayPriority,
+  quadrantOf,
+  setQuadrant,
+} from "./domain/eisenhower";
+export type { EisenhowerFlags, Quadrant } from "./domain/eisenhower";

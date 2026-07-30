@@ -7,12 +7,13 @@ import { useEffect, useRef, useState } from "react";
 import { Kbd } from "@/components/common/kbd";
 import { useWriteContext } from "@/lib/data/provider";
 import { PRIORITY, useKeyHandler } from "@/lib/keyboard/provider";
+import { useUrlState } from "@/lib/url-state";
 import { cn } from "@/lib/utils";
 
 /**
  * A keyboard-navigable task list.
  *
- * J/K move the selection, Space toggles completion, Enter will open the inspector in Phase 2.
+ * J/K move the selection, Space toggles completion, Enter opens the inspector via ?task=.
  * Selection is an index rather than an id so it survives a task disappearing from the list —
  * completing the last item keeps the cursor at the end instead of losing it entirely.
  */
@@ -24,6 +25,7 @@ export function TaskList({
   emptyMessage: string;
 }) {
   const { db, ctx } = useWriteContext();
+  const { taskId: openTaskId, openTask } = useUrlState();
   const [selected, setSelected] = useState(0);
   const containerRef = useRef<HTMLUListElement>(null);
 
@@ -53,6 +55,13 @@ export function TaskList({
       if (!task) return false;
       event.preventDefault();
       void setTaskCompleted(db, ctx, task.id, task.status !== "COMPLETED");
+      return true;
+    }
+    if (event.key === "Enter") {
+      const task = tasks[selected];
+      if (!task) return false;
+      event.preventDefault();
+      openTask(task.id);
       return true;
     }
     return false;
@@ -87,7 +96,12 @@ export function TaskList({
           key={task.id}
           task={task}
           selected={i === selected}
+          open={task.id === openTaskId}
           onSelect={() => setSelected(i)}
+          onOpen={() => {
+            setSelected(i);
+            openTask(task.id);
+          }}
           onToggle={() => void setTaskCompleted(db, ctx, task.id, task.status !== "COMPLETED")}
           onDelete={() => void softDelete(db, ctx, "task", task.id)}
         />
@@ -106,13 +120,17 @@ const QUADRANT_STYLES = {
 function TaskRowItem({
   task,
   selected,
+  open,
   onSelect,
+  onOpen,
   onToggle,
   onDelete,
 }: {
   task: TaskRow;
   selected: boolean;
+  open: boolean;
   onSelect: () => void;
+  onOpen: () => void;
   onToggle: () => void;
   onDelete: () => void;
 }) {
@@ -125,7 +143,13 @@ function TaskRowItem({
       onMouseDown={onSelect}
       className={cn(
         "group flex items-center gap-3 px-6 py-2.5 transition-colors",
-        selected ? "bg-rain-soft" : "hover:bg-accent/40",
+        // The row shown in the inspector reads stronger than the mere keyboard cursor, so it
+        // stays identifiable after focus moves on.
+        open
+          ? "bg-rain-soft ring-1 ring-inset ring-rain/30"
+          : selected
+            ? "bg-rain-soft"
+            : "hover:bg-accent/40",
       )}
     >
       <span
@@ -146,14 +170,16 @@ function TaskRowItem({
         className="size-4 shrink-0 cursor-pointer accent-rain"
       />
 
-      <span
+      <button
+        type="button"
+        onClick={onOpen}
         className={cn(
-          "min-w-0 flex-1 truncate text-sm",
+          "min-w-0 flex-1 truncate text-left text-sm",
           done ? "text-muted-foreground line-through" : "text-foreground",
         )}
       >
         {task.title}
-      </span>
+      </button>
 
       <button
         type="button"

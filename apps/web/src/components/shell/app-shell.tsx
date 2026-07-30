@@ -1,46 +1,65 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { type ReactNode, Suspense } from "react";
 
 import { CommandPalette } from "@/components/palette/command-palette";
+import { ShortcutHelp } from "@/components/shell/shortcut-help";
 import { Sidebar } from "@/components/shell/sidebar";
 import { StatusBar } from "@/components/shell/status-bar";
+import { InspectorDrawer } from "@/components/task/inspector-drawer";
 import { KeyboardProvider, useChordHint } from "@/lib/keyboard/provider";
 
 /**
  * The §4.1 three-pane frame: collapsible left sidebar, main canvas, right inspector drawer.
- * (The inspector arrives in Phase 2 with `?task=`.)
  *
- * This lives in `(app)/layout.tsx`, and that placement is doing real work: React preserves
- * layout component instances across sibling page navigations, so the mounted command palette,
- * the keyboard provider, the sync engine's live queries and — from Phase 5 — the pomodoro all
- * survive G+T → G+E → G+T without remounting. No `cacheComponents` needed, which is fortunate
- * since enabling it would pause effects on hidden routes and quietly stop the timer.
+ * This lives in `(app)/layout.tsx`, and that placement is doing real work: React preserves layout
+ * component instances across sibling page navigations, so the mounted command palette, the
+ * keyboard provider, the sync engine's live queries and — from Phase 5 — the pomodoro all survive
+ * G+T → G+E → G+T without remounting. No `cacheComponents` needed, which is fortunate since
+ * enabling it would pause effects on hidden routes and quietly stop the timer.
  */
 export function AppShell({ children }: { children: ReactNode }) {
   return (
     <KeyboardProvider>
-      <div className="flex flex-1 overflow-hidden">
-        <Sidebar />
+      {/*
+       * `useSearchParams` requires a <Suspense> boundary inside a statically prerendered route or
+       * `next build` fails outright. Everything reading `?task=` / `?view=` sits below this one —
+       * that includes page content, since a list row opening the inspector needs the same state.
+       */}
+      <Suspense fallback={<ShellFallback />}>
+        <div className="flex flex-1 overflow-hidden">
+          <Sidebar />
 
-        <div className="flex min-w-0 flex-1 flex-col">
-          <main className="flex-1 overflow-y-auto">{children}</main>
-          <StatusBar />
+          <div className="flex min-w-0 flex-1 flex-col">
+            <main className="flex-1 overflow-y-auto">{children}</main>
+            <StatusBar />
+          </div>
+
+          <InspectorDrawer />
         </div>
-      </div>
+      </Suspense>
 
       <CommandPalette />
+      <ShortcutHelp />
       <ChordHint />
     </KeyboardProvider>
+  );
+}
+
+function ShellFallback() {
+  return (
+    <div className="flex flex-1 items-center justify-center">
+      <p className="text-sm text-muted-foreground">Loading…</p>
+    </div>
   );
 }
 
 /**
  * Shows the held chord prefix.
  *
- * Without this, pressing `G` looks like nothing happened — the app swallows the key and waits.
- * A 1.5s invisible modal state is exactly the kind of thing that makes a keyboard UI feel
- * broken rather than fast.
+ * Without this, pressing `G` looks like nothing happened — the app swallows the key and waits. A
+ * 1.5s invisible modal state is exactly the kind of thing that makes a keyboard UI feel broken
+ * rather than fast.
  */
 function ChordHint() {
   const chord = useChordHint();
