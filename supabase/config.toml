@@ -1,0 +1,33 @@
+project_id = "twxkbcxudvrwqkkaecks"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+shadow_port = 54320
+
+[auth]
+enabled = true
+site_url = "http://localhost:3000"
+additional_redirect_urls = ["http://localhost:3000/auth/callback"]
+jwt_expiry = 3600
+enable_refresh_token_rotation = true
+
+# CRITICAL — see supabase/README.md and migration 20260730000500_rls.sql.
+# RLS is pinned to app_owner, but signups must ALSO be off. Leaving these true would let
+# anyone create an account; they would then fail the app_owner check, but there is no reason
+# to leave the door ajar.
+enable_signup = false
+enable_anonymous_sign_ins = false
+
+[auth.email]
+enable_signup = false
+double_confirm_changes = true
+enable_confirmations = true
+otp_length = 6
+otp_expiry = 3600
