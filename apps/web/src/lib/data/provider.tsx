@@ -56,11 +56,17 @@ export function DataProvider({
   session,
   children,
 }: {
-  session: Session | null;
+  /*
+   * Required, not nullable. AuthGate only renders this once a session exists, and making that a
+   * type-level fact removes the transitional state where `ctx` could be null while children
+   * render — which is exactly the crash this used to produce.
+   */
+  session: Session;
   children: ReactNode;
 }) {
   const db = getDb();
   const [ctx, setCtx] = useState<WriteContext | null>(null);
+  const [bootError, setBootError] = useState<string | null>(null);
   const [engine, setEngine] = useState<SyncEngine | null>(null);
   const [status, setStatus] = useState<SyncStatus>({
     phase: "idle",
@@ -70,36 +76,44 @@ export function DataProvider({
     online: true,
   });
 
-  const userId = session?.user.id ?? null;
+  const userId = session.user.id;
 
   useEffect(() => {
-    // No session means no RLS-authorised requests are possible, so there is nothing to sync.
-    // The local database stays readable — that is the point of local-first.
-    if (!userId) {
-      setCtx(null);
-      return;
-    }
-
     let disposed = false;
     let started: SyncEngine | null = null;
 
     void (async () => {
-      const clientId = await getClientId(db);
-      if (disposed) return;
-      setCtx(createWriteContext(clientId));
+      try {
+        /*
+         * The device id lives in Dexie so it survives reloads and stays identical to what the
+         * sync engine uses — it is the LWW tie-break, so a value that differed between the two
+         * could stop peers converging. Reading it is one indexed IndexedDB lookup.
+         */
+        const clientId = await getClientId(db);
+        if (disposed) return;
+        setCtx(createWriteContext(clientId));
 
-      const transport = createSupabaseTransport(getSupabase(), SYNCED_TABLES);
-      const next = new SyncEngine({
-        db,
-        transport,
-        onStatus: (s) => {
-          if (!disposed) setStatus(s);
-        },
-      });
+        const transport = createSupabaseTransport(getSupabase(), SYNCED_TABLES);
+        const next = new SyncEngine({
+          db,
+          transport,
+          onStatus: (s) => {
+            if (!disposed) setStatus(s);
+          },
+        });
 
-      started = next;
-      setEngine(next);
-      await next.start();
+        started = next;
+        setEngine(next);
+        await next.start();
+      } catch (err) {
+        if (disposed) return;
+        /*
+         * Most likely cause is IndexedDB being unavailable — private browsing in some
+         * browsers, or storage denied. Surfaced rather than swallowed, because the app is
+         * unusable without a local database and a blank screen would be baffling.
+         */
+        setBootError(err instanceof Error ? err.message : String(err));
+      }
     })();
 
     return () => {
@@ -120,6 +134,40 @@ export function DataProvider({
     [db, ctx, status, engine],
   );
 
+  if (bootError) {
+    return (
+      <div className="flex flex-1 items-center justify-center p-6">
+        <div className="max-w-md text-center">
+          <p className="text-sm text-priority-high">Local database unavailable</p>
+          <p className="mt-2 text-xs text-muted-foreground">{bootError}</p>
+          <p className="mt-3 text-xs text-muted-foreground">
+            RainFlow stores everything locally first, so it cannot run without IndexedDB.
+            Private-browsing windows and blocked site storage are the usual causes.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  /*
+   * Children do not render until the write context exists.
+   *
+   * This is what makes `useWriteContext`'s guarantee real. Resolving the device id is async, so
+   * for one render after a session appears `ctx` is still null — and any component calling
+   * `useWriteContext` at the top level (which is all of them) would throw immediately. Gating
+   * here fixes every consumer at once instead of pushing null-checks into each of them.
+   *
+   * The cost is a single indexed IndexedDB read before first paint. The static shell has already
+   * been served from the CDN by this point, so the §7.1 FCP budget is unaffected.
+   */
+  if (!ctx) {
+    return (
+      <div className="flex flex-1 items-center justify-center">
+        <p className="text-sm text-muted-foreground">Opening local database…</p>
+      </div>
+    );
+  }
+
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;
 }
 
@@ -132,17 +180,20 @@ export function useData(): DataContextValue {
 /**
  * The write context, guaranteed non-null.
  *
- * Throws rather than returning null so a mutation cannot silently no-op: a write that vanishes
- * because the session had not resolved yet is exactly the class of bug that is impossible to
- * reproduce later. Components that render before a session exists should not be offering
- * write affordances at all.
+ * The guarantee is enforced by `DataProvider`, which does not render children until `ctx`
+ * resolves — so any component inside the provider can call this at the top level without a
+ * null check.
+ *
+ * Still throws rather than returning null, because a mutation that silently no-ops is the class
+ * of bug that never reproduces. If this ever fires, the cause is a component rendered outside
+ * `DataProvider` (which lives inside `AuthGate`), not a timing race.
  */
 export function useWriteContext(): { db: RainflowDB; ctx: WriteContext } {
   const { db, ctx } = useData();
   if (!ctx) {
     throw new Error(
-      "No write context — the sync engine has not booted. Render write affordances inside " +
-        "<AuthGate> so a session is guaranteed.",
+      "No write context. This component is rendering outside <DataProvider> — write " +
+        "affordances belong inside the (app) route group, which wraps them in <AuthGate>.",
     );
   }
   return { db, ctx };
