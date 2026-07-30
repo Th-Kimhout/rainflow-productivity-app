@@ -28,6 +28,50 @@ which remain accurate.
 | 8 | **Weekly digest computed on view** from Dexie | §3.6 "Automated" | No cron or scheduled function needed; the data is already local. |
 | 9 | **Backups via client-side JSON export** | §7.2 | Supabase's free tier has no point-in-time recovery. §7.2's "Automated Database Backups … via Neon point-in-time recovery" is not achievable and is replaced by an explicit export. |
 | 10 | Repo is **public**, named `rainflow-productivity-app` | §8.1 | Safe because decision 5 provides real auth + RLS rather than a shared secret. |
+| 11 | **Email + password login**, not magic link | §7.2 | Forced by a free-tier limit, then kept on merit — see below. |
+| 12 | Password floor **12 characters**, `lower_upper_letters_digits` | — | Length dominates composition for credential strength, and this one lives in a password manager. |
+
+### Decision 11 in detail — why login is a password, not a magic link
+
+The plan called for magic-link auth with a 6-digit OTP fallback, because PKCE stores its code
+verifier in the localStorage of the browser that **requested** the link: request on a laptop,
+open the mail on a phone, and the exchange fails with an opaque error. The `{{ .Token }}` code
+was the escape hatch.
+
+That escape hatch is not available. Supabase rejects template edits on the free tier:
+
+> Email template modification is not available for free tier projects using the default email
+> provider. Please upgrade your plan or configure a custom SMTP provider.
+
+Worth noting the failure mode: a `[auth.email.template.*]` block does not get *ignored*, it
+makes the entire `supabase config push` fail with a 400 — so it silently blocks every other
+auth setting in `config.toml` from being applied.
+
+The default template contains no `{{ .Token }}`, so there is no code to fall back to, which
+left three options: same-device-only magic links, wiring up free custom SMTP (Resend) to unlock
+templates, or dropping email from the login path entirely.
+
+**Password auth was chosen, and is arguably better here regardless of the free-tier limit:**
+
+- No cross-device problem at all — no PKCE verifier to strand on the wrong machine.
+- No dependency on email delivery for the ability to log in, which matters for an app whose
+  whole premise is working when the network is unreliable.
+- No email round-trip on every session expiry. For an app used daily, that friction is real and
+  runs directly against §1.2's zero-friction principle.
+- Signups stay **disabled**; the account is created via the dashboard, so the password being
+  enabled does not open a registration path.
+
+The cost is one credential to manage, which a password manager handles. `supabase/templates/`
+was removed rather than left as a dead file; if custom SMTP is ever configured, magic links
+become available again with no schema or RLS change.
+
+### A trap in `supabase config push`
+
+It pushes the **entire** `config.toml`, and any key omitted locally is filled from CLI defaults
+which then overwrite the remote value. The first push would have silently **disabled TOTP MFA**
+(remote `true` → CLI default `false`) and dropped the email rate limit from `1m0s` to `1s`.
+Both are now pinned explicitly in `config.toml` with a warning comment. When adding settings
+there, add — never omit and assume the remote value survives.
 
 ## Schema deviations from §6
 
@@ -74,10 +118,12 @@ which remain accurate.
 1. **Offline is narrower than §1.2's "fully functional without active network".** An already-loaded
    tab works completely, and prefetched routes navigate fine. A **cold load with no network fails**,
    because the HTML/RSC payload must come over the network.
-2. **Signups must be disabled in Supabase Auth settings.** With `auth.uid() is not null` policies and
-   Supabase's default-open signups, anyone who signs up with any email would get full read/write via
-   the public anon key. Mitigated by disabling signups, `signInWithOtp({ shouldCreateUser: false })`,
-   and pinning policies to the owner's uid (migration `0008_owner_pin`).
+2. ~~**Signups must be disabled in Supabase Auth settings.**~~ **DONE** — `enable_signup = false`
+   and `enable_anonymous_sign_ins = false` are applied to the remote project via
+   `supabase config push`. Without this, anyone who signed up with any email would have reached
+   the `app_owner` check with a valid session; the policy pin would still have denied them, but
+   there was no reason to leave the outer door open. Verified: anonymous requests to all 8 tables
+   return HTTP 401 `permission denied for table`.
 3. **No cross-device field-level merge.** Full-row upsert with last-write-wins means two devices
    editing *different fields* of the same task will lose one. Correct for N=1; deliberately not
    "fixed" with per-field timestamps or a CRDT.
