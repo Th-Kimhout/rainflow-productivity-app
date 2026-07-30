@@ -2,10 +2,12 @@
 
 import {
   type DayKey,
+  type Quadrant,
   type TaskRow,
   type TaskStatus,
   dayRange,
   displayPriority,
+  quadrantOf,
   todayKey,
 } from "@rainflow/data";
 import { useLiveQuery } from "dexie-react-hooks";
@@ -105,4 +107,36 @@ export function useSubtasks(parentId: string | null): TaskRow[] | undefined {
 export function usePendingWrites(): number {
   const { db } = useData();
   return useLiveQuery(() => db.outbox.count(), [db]) ?? 0;
+}
+
+/**
+ * Open tasks grouped by Eisenhower quadrant (§3.2).
+ *
+ * Completed and archived tasks are excluded: the matrix is a triage surface, and finished work
+ * would crowd out the decisions still to be made. Subtasks are excluded too — they belong to their
+ * parent's quadrant, and listing them separately would double-count the same commitment.
+ */
+export function useMatrixTasks(): Record<Quadrant, TaskRow[]> | undefined {
+  const { db } = useData();
+
+  return useLiveQuery(async () => {
+    const rows = live(await db.task.toArray()).filter(
+      (t) =>
+        t.parent_id === null && t.status !== "COMPLETED" && t.status !== "ARCHIVED",
+    );
+
+    const grouped: Record<Quadrant, TaskRow[]> = {
+      DO_FIRST: [],
+      SCHEDULE: [],
+      DELEGATE: [],
+      ELIMINATE: [],
+    };
+
+    for (const task of rows) grouped[quadrantOf(task)].push(task);
+    for (const q of Object.keys(grouped) as Quadrant[]) {
+      grouped[q].sort((a, b) => a.sort_order - b.sort_order);
+    }
+
+    return grouped;
+  }, [db]);
 }

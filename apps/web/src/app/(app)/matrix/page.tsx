@@ -1,12 +1,26 @@
-import { NotBuiltYet } from "@/components/common/not-built-yet";
+"use client";
 
+import { MatrixView } from "@/components/views/matrix-view";
+
+/**
+ * §5.1 step 2, first half: prioritisation.
+ *
+ * The grid fills the canvas rather than sitting under a tall header — triage is a spatial task and
+ * the four cells want the room.
+ */
 export default function MatrixPage() {
   return (
-    <NotBuiltYet
-      section="PRD §3.2"
-      title="Eisenhower Matrix"
-      phase="Phase 3"
-      description="Four quadrants derived from is_urgent + is_important, with drag-and-drop between them and 1–4 to set a quadrant directly."
-    />
+    <div className="flex h-full flex-col">
+      <header className="shrink-0 border-b border-border px-6 py-3">
+        <p className="text-xs uppercase tracking-widest text-muted-foreground">PRD §3.2</p>
+        <h1 className="mt-0.5 text-lg font-semibold tracking-tight text-foreground">
+          Eisenhower Matrix
+        </h1>
+      </header>
+
+      <div className="min-h-0 flex-1">
+        <MatrixView />
+      </div>
+    </div>
   );
 }

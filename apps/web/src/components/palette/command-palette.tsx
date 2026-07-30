@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Kbd } from "@/components/common/kbd";
 import { ParsedChips } from "@/components/palette/parsed-chips";
 import { useWriteContext } from "@/lib/data/provider";
-import { PRIORITY, useKeyHandler } from "@/lib/keyboard/provider";
+import { PRIORITY, isEditable, useKeyHandler } from "@/lib/keyboard/provider";
 
 /**
  * Universal quick capture (§3.1) — Cmd/Ctrl+K from anywhere.
@@ -39,8 +39,18 @@ export function CommandPalette() {
     }
 
     if (!open) {
-      // `C` creates a task. Single-key, so the provider only reaches here when not typing.
-      if (event.key.toLowerCase() === "c" && !event.metaKey && !event.ctrlKey) {
+      /*
+       * `C` creates a task — but this handler opts into `whenTyping` for ⌘K's sake, so the
+       * provider's editable filter does NOT apply here. Without this explicit check, typing the
+       * letter c into a task title would open the palette mid-word.
+       */
+      if (
+        event.key.toLowerCase() === "c" &&
+        !event.metaKey &&
+        !event.ctrlKey &&
+        !event.altKey &&
+        !isEditable(event.target)
+      ) {
         event.preventDefault();
         setOpen(true);
         return true;
@@ -56,7 +66,11 @@ export function CommandPalette() {
     }
 
     return false;
-  });
+  },
+  // ⌘K must work from inside any text field — capturing a stray thought while editing
+  // something else is the main use case (§5.1 step 3) — and Escape must close the palette
+  // while the cursor is in its own input.
+  { whenTyping: true });
 
   useEffect(() => {
     if (open) inputRef.current?.focus();

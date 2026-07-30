@@ -17,7 +17,7 @@ import { useEffect, useState } from "react";
 import { SubtaskTree } from "@/components/task/subtask-tree";
 import { useTask } from "@/lib/data/hooks";
 import { useWriteContext } from "@/lib/data/provider";
-import { PRIORITY, useKeyHandler } from "@/lib/keyboard/provider";
+import { PRIORITY, isEditable, useKeyHandler } from "@/lib/keyboard/provider";
 import { useUrlState } from "@/lib/url-state";
 import { cn } from "@/lib/utils";
 
@@ -31,15 +31,33 @@ export function InspectorDrawer() {
   const { taskId, closeTask } = useUrlState();
   const task = useTask(taskId);
 
-  useKeyHandler(PRIORITY.overlay, (event) => {
-    if (!taskId) return false;
-    if (event.key === "Escape") {
+  useKeyHandler(
+    PRIORITY.overlay,
+    (event) => {
+      if (!taskId) return false;
+      if (event.key !== "Escape") return false;
       event.preventDefault();
+
+      /*
+       * If the cursor is in one of the drawer's fields, blur FIRST and keep the drawer open.
+       *
+       * Title and notes commit on blur. Closing straight away would unmount the field, and an
+       * unmount does not reliably fire `blur` — so the edit just in front of the user would be
+       * silently discarded. A second Escape closes.
+       */
+      const active = document.activeElement;
+      if (active instanceof HTMLElement && isEditable(active)) {
+        active.blur();
+        return true;
+      }
+
       closeTask();
       return true;
-    }
-    return false;
-  });
+    },
+    // Escape has to reach this handler even while a field has focus, which is precisely the
+    // case the blur-first branch above exists for.
+    { whenTyping: true },
+  );
 
   if (!taskId) return null;
 

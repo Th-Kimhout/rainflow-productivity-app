@@ -61,15 +61,30 @@ export const PRIORITY = {
 
 type Handler = (event: KeyboardEvent) => boolean | void;
 
+export interface HandlerOptions {
+  /**
+   * Receive events while focus is in a text field. Defaults to FALSE.
+   *
+   * Almost nothing should opt in. `1`–`4` in the matrix and `J`/`K` in a list must not fire while
+   * the user is typing a task title — otherwise typing "1" into the estimate field silently moves
+   * the task to another quadrant, and typing "j" moves the selection out from under them.
+   *
+   * The exceptions are handlers whose whole job is to work mid-typing: the command palette
+   * (⌘K, Escape) and the inspector (Escape).
+   */
+  whenTyping?: boolean;
+}
+
 interface Registration {
   id: number;
   priority: number;
   handler: Handler;
+  whenTyping: boolean;
 }
 
 interface KeyboardContextValue {
   /** Register a handler. Return `true` from it to claim the event. */
-  register: (priority: number, handler: Handler) => () => void;
+  register: (priority: number, handler: Handler, options?: HandlerOptions) => () => void;
   /** The chord prefix currently held, for the status hint. */
   pendingChord: string | null;
 }
@@ -104,24 +119,40 @@ export function KeyboardProvider({ children }: { children: ReactNode }) {
     setPendingChord(null);
   }, []);
 
-  const register = useCallback((priority: number, handler: Handler) => {
-    const id = nextId.current++;
-    registrations.current.push({ id, priority, handler });
-    return () => {
-      registrations.current = registrations.current.filter((r) => r.id !== id);
-    };
-  }, []);
+  const register = useCallback(
+    (priority: number, handler: Handler, options?: HandlerOptions) => {
+      const id = nextId.current++;
+      registrations.current.push({
+        id,
+        priority,
+        handler,
+        whenTyping: options?.whenTyping ?? false,
+      });
+      return () => {
+        registrations.current = registrations.current.filter((r) => r.id !== id);
+      };
+    },
+    [],
+  );
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
-      // Overlays first, then views, then global.
-      const ordered = [...registrations.current].sort((a, b) => b.priority - a.priority);
-      for (const { handler } of ordered) {
-        if (handler(event) === true) return;
-      }
-
       const editable = isEditable(event.target);
       const hasModifier = event.metaKey || event.ctrlKey || event.altKey;
+
+      /*
+       * Overlays first, then views, then global.
+       *
+       * The `editable` filter has to happen HERE, before dispatch — not only around the chord
+       * logic below. Handlers used to receive every event regardless, which meant typing "1" into
+       * the inspector's estimate field moved the task to another quadrant and typing "j" into a
+       * title moved the list selection.
+       */
+      const ordered = [...registrations.current].sort((a, b) => b.priority - a.priority);
+      for (const { handler, whenTyping } of ordered) {
+        if (editable && !whenTyping) continue;
+        if (handler(event) === true) return;
+      }
 
       // ---------------------------------------------------------------- chords
       if (pendingChord === "g" && !hasModifier) {
@@ -175,14 +206,20 @@ export function useKeyboard(): KeyboardContextValue {
  * would otherwise re-register on every render, which is both wasteful and a source of
  * ordering surprises.
  */
-export function useKeyHandler(priority: number, handler: Handler): void {
+export function useKeyHandler(
+  priority: number,
+  handler: Handler,
+  options?: HandlerOptions,
+): void {
   const { register } = useKeyboard();
   const ref = useRef(handler);
   ref.current = handler;
 
+  const whenTyping = options?.whenTyping ?? false;
+
   useEffect(
-    () => register(priority, (event) => ref.current(event)),
-    [register, priority],
+    () => register(priority, (event) => ref.current(event), { whenTyping }),
+    [register, priority, whenTyping],
   );
 }
 
