@@ -1,10 +1,17 @@
 /**
  * Wire types — the exact row shapes that cross the network to PostgREST.
  *
- * These are hand-written to match `supabase/migrations/*.sql` because the Supabase CLI is
- * not installed yet, so `supabase gen types typescript` has not been run. Once it has, the
- * generated output lands in `types.gen.ts` and `types.assert.ts` proves these agree with it
- * at compile time — so drift becomes a type error rather than a runtime surprise.
+ * These are hand-written, and `types.assert.ts` proves at COMPILE TIME that they match
+ * `types.gen.ts` (generated from the live database by `supabase gen types typescript`). Drift
+ * is therefore a type error, not a runtime surprise.
+ *
+ * After any schema change: `supabase db push`, regenerate `types.gen.ts`, then run
+ * `pnpm --filter @rainflow/data typecheck` and fix whatever it flags here.
+ *
+ * These stay hand-written rather than being replaced by the generated types because the
+ * generated `Database` type is awkward to use directly (every row reaches through
+ * `Database["public"]["Tables"][...]["Row"]`) and because the assertions let us state
+ * intent the generator cannot — that `id` must be required on insert, for instance.
  *
  * Naming is snake_case throughout: these are database rows, not domain objects, and keeping
  * the wire shape literal means a full-row upsert is just `supabase.from(t).upsert(row)`.

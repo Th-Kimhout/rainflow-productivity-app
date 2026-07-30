@@ -160,11 +160,14 @@ create table habit (
     end
   ),
 
-  -- Guard the array contents too; a smallint[] would otherwise accept 9 or -1.
+  -- Guard the array CONTENTS too; a bare smallint[] would happily accept 9 or -1.
+  --
+  -- Uses the `<@` containment operator rather than `bool_and(...) over unnest(...)`, because
+  -- a CHECK constraint may not contain a subquery — Postgres rejects the table outright with
+  -- "cannot use subquery in check constraint". Containment is a plain expression and says the
+  -- same thing: every element of weekdays is one of 0..6.
   constraint habit_weekdays_in_range check (
-    weekdays is null or (
-      (select bool_and(d between 0 and 6) from unnest(weekdays) as d)
-    )
+    weekdays is null or weekdays <@ array[0, 1, 2, 3, 4, 5, 6]::smallint[]
   )
 );
 
