@@ -1,18 +1,19 @@
 "use client";
 
-import { createTask } from "@rainflow/data";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { createTaskFromCapture, parseCapture } from "@rainflow/data";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Kbd } from "@/components/common/kbd";
+import { ParsedChips } from "@/components/palette/parsed-chips";
 import { useWriteContext } from "@/lib/data/provider";
 import { PRIORITY, useKeyHandler } from "@/lib/keyboard/provider";
 
 /**
  * Universal quick capture (§3.1) — Cmd/Ctrl+K from anywhere.
  *
- * Phase 1 captures raw text only. NLP parsing of dates, `#tags` and `@urgent` arrives in
- * Phase 2; the point of shipping it plain first is that the capture path — keystroke to Dexie
- * to outbox — gets exercised end to end before any parsing complexity sits on top of it.
+ * Input is parsed live: dates, `#tags`, and `@urgent`/`@important` are resolved as you type and
+ * shown as chips, so a misparse is visible before you commit rather than discovered days later
+ * when the task fails to show up in Today.
  *
  * Captured tasks land in INBOX per §3.1's "smart fallbacks": capture must never block on
  * deciding where something goes.
@@ -61,9 +62,18 @@ export function CommandPalette() {
     if (open) inputRef.current?.focus();
   }, [open]);
 
+  /*
+   * Re-parsed on every keystroke. Cheap enough to do synchronously — chrono over a single short
+   * line is microseconds, and §7.1 budgets 50ms for the whole palette.
+   */
+  const parsed = useMemo(() => parseCapture(value), [value]);
+
   async function submit() {
-    const title = value.trim();
-    if (!title) return;
+    /*
+     * Guard on the PARSED title, not the raw input. "#project @high" parses to an empty title,
+     * and a task called "" is worse than no task — the tokens were metadata, not a name.
+     */
+    if (!parsed.title) return;
 
     /*
      * Close first, then write. The write is local so it completes in about a millisecond, but
@@ -71,7 +81,7 @@ export function CommandPalette() {
      * a stuck-open palette would be a worse failure than a missing task.
      */
     close();
-    await createTask(db, ctx, { title });
+    await createTaskFromCapture(db, ctx, parsed);
   }
 
   if (!open) return null;
@@ -99,14 +109,28 @@ export function CommandPalette() {
             ref={inputRef}
             value={value}
             onChange={(e) => setValue(e.target.value)}
-            placeholder="Capture a task…"
+            placeholder="Capture a task…  tomorrow 3pm #project @urgent"
             aria-label="Task title"
             className="w-full bg-transparent px-4 py-3.5 text-base text-foreground outline-none placeholder:text-muted-foreground"
           />
         </form>
 
+        <ParsedChips parsed={parsed} />
+
         <div className="flex items-center justify-between border-t border-border px-4 py-2 text-xs text-muted-foreground">
-          <span>Goes to Inbox</span>
+          <span>
+            {parsed.title ? (
+              <>
+                Goes to Inbox as{" "}
+                <span className="text-foreground">&ldquo;{parsed.title}&rdquo;</span>
+              </>
+            ) : value.trim() ? (
+              // Every word was metadata, so there is no name left to save.
+              <span className="text-priority-high">Needs a title</span>
+            ) : (
+              "Goes to Inbox"
+            )}
+          </span>
           <span className="flex items-center gap-1.5">
             <Kbd>Enter</Kbd> save
             <Kbd>Esc</Kbd> cancel

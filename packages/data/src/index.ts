@@ -12,6 +12,8 @@
 export {
   APP_TIMEZONE,
   addDays,
+  appWallClock,
+  appWallClockAsHostLocal,
   atMinutesIntoDay,
   dayKeyOf,
   dayRange,
@@ -77,6 +79,7 @@ export {
 
 export {
   createTask,
+  createTaskFromCapture,
   createWriteContext,
   patch,
   put,
@@ -105,6 +108,10 @@ export {
   requestPersistentStorage,
 } from "./sync/engine";
 export type { EngineOptions, SyncPhase, SyncStatus } from "./sync/engine";
+
+// ---------------------------------------------------------------------------- nlp
+export { parseCapture } from "./nlp/parse-capture";
+export type { CaptureToken, ParsedCapture } from "./nlp/parse-capture";
 
 // ---------------------------------------------------------------------------- domain
 export { displayPriority, quadrantOf, setQuadrant } from "./domain/eisenhower";

@@ -214,3 +214,33 @@ export function atMinutesIntoDay(key: DayKey, minutes: number): Date {
 export function hourOf(instant: Date): number {
   return zonedParts(instant).hour;
 }
+
+/** `instant` broken into `APP_TIMEZONE` wall-clock fields. */
+export function appWallClock(instant: Date = new Date()): {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+  second: number;
+} {
+  return zonedParts(instant);
+}
+
+/**
+ * A Date whose HOST-local fields read as `APP_TIMEZONE`'s wall clock.
+ *
+ * Needed for natural-language date parsing. Libraries like chrono resolve "tomorrow" and
+ * "next monday" by reading the host-local fields of a reference Date — so on a machine set to
+ * UTC-7, "tomorrow" would be computed against the wrong day for a Phnom Penh user, and the
+ * resulting task would be due a day early.
+ *
+ * `new Date(y, m, d, …)` interprets its arguments as host-local, so constructing one from the
+ * app-timezone components gives a Date that *reads* correctly to such a library. The instant it
+ * represents is meaningless — only its fields matter, and it must never be stored or compared.
+ * Convert the parser's output back through `atMinutesIntoDay` to get a real instant.
+ */
+export function appWallClockAsHostLocal(instant: Date = new Date()): Date {
+  const p = zonedParts(instant);
+  return new Date(p.year, p.month - 1, p.day, p.hour, p.minute, p.second);
+}

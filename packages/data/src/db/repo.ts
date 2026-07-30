@@ -150,6 +150,67 @@ export async function createTask(
 }
 
 /**
+ * Create a task from parsed §3.1 quick-capture input, including its tags.
+ *
+ * Tags are resolved find-or-create by lower-cased name, matching the partial unique index
+ * `tag_name_unique_live`. The lookup is local: at N=1 the whole tag set is a handful of rows, and
+ * going to the network would defeat the point of instant capture.
+ *
+ * Not wrapped in a single transaction across all three tables on purpose. `put` already pairs
+ * each row with its outbox op atomically, and the FKs are `deferrable initially deferred`, so a
+ * partially-drained batch cannot violate them. Sequencing tag → task → task_tag also matches
+ * TABLE_ORDER, so the drain sends them in a valid order.
+ */
+export async function createTaskFromCapture(
+  db: RainflowDB,
+  ctx: WriteContext,
+  parsed: {
+    title: string;
+    dueAt: string | null;
+    dueIsAllDay: boolean;
+    isUrgent: boolean;
+    isImportant: boolean;
+    tags: readonly string[];
+  },
+  status: WireTables["task"]["status"] = "INBOX",
+): Promise<WireTables["task"]> {
+  const tagIds: string[] = [];
+
+  for (const name of parsed.tags) {
+    const existing = (await db.tag.toArray()).find(
+      (t) => t.deleted_at === null && t.name.toLowerCase() === name,
+    );
+
+    if (existing) {
+      tagIds.push(existing.id);
+      continue;
+    }
+
+    const created = await put(db, ctx, "tag", {
+      id: newId(),
+      name,
+      color: "#38bdf8", // §4.1 Rain Blue; per-tag colours are a later affordance.
+    });
+    tagIds.push(created.id);
+  }
+
+  const task = await createTask(db, ctx, {
+    title: parsed.title,
+    status,
+    isUrgent: parsed.isUrgent,
+    isImportant: parsed.isImportant,
+    dueAt: parsed.dueAt,
+    dueIsAllDay: parsed.dueIsAllDay,
+  });
+
+  for (const tagId of tagIds) {
+    await put(db, ctx, "task_tag", { task_id: task.id, tag_id: tagId });
+  }
+
+  return task;
+}
+
+/**
  * Toggle completion.
  *
  * `status` and `completed_at` move together — §6 carried a third field (`isCompleted`) that

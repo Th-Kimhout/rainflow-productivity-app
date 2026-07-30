@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.111.0",
+    "chrono-node": "^2.10.1",
     "dexie": "^4.4.4"
   },
   "devDependencies": {
