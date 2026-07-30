@@ -1,0 +1,194 @@
+"use client";
+
+import { useRouter } from "next/navigation";
+import {
+  type ReactNode,
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+
+/**
+ * The keyboard system (§4.2). RainFlow is meant to be 100% operable without a mouse.
+ *
+ * Three things make this harder than a switch on `event.key`:
+ *
+ * 1. TEXT FIELDS. `C` must create a task — but not while the user is typing the letter C into a
+ *    title. Single-key bindings are suppressed whenever focus is in an editable element.
+ *    Modifier combos (Cmd+K) and Escape are NOT suppressed, because those are exactly the keys
+ *    you need while typing.
+ *
+ * 2. CHORDS. `G` then `T` navigates to Today. That is a two-key sequence with a timeout, so `G`
+ *    has to be swallowed and held rather than acted on. A stale pending chord is worse than
+ *    none — press G, get distracted, come back and press T, and you would teleport
+ *    unexpectedly — hence the expiry.
+ *
+ * 3. ORDER. Overlays (palette, zen mode) must win over global bindings, or Escape closes the
+ *    wrong thing. Handlers are registered with a priority and the highest one that claims the
+ *    event stops propagation.
+ */
+
+const CHORD_TIMEOUT_MS = 1_500;
+
+/**
+ * The `G`-prefixed navigation chords (§4.2).
+ *
+ * `as const` is required, not stylistic: `typedRoutes` checks `router.push` against a union of
+ * real routes, so a widened `string` here is a build error. That is the feature working — it
+ * also means adding a chord for a route that does not exist fails at compile time rather than
+ * 404ing under someone's fingers.
+ */
+const CHORD_ROUTES = {
+  t: "/today",
+  i: "/inbox",
+  e: "/matrix",
+  h: "/habits",
+  a: "/analytics",
+} as const;
+
+type ChordKey = keyof typeof CHORD_ROUTES;
+
+/** Higher priority sees the event first. */
+export const PRIORITY = {
+  global: 0,
+  view: 10,
+  overlay: 100,
+} as const;
+
+type Handler = (event: KeyboardEvent) => boolean | void;
+
+interface Registration {
+  id: number;
+  priority: number;
+  handler: Handler;
+}
+
+interface KeyboardContextValue {
+  /** Register a handler. Return `true` from it to claim the event. */
+  register: (priority: number, handler: Handler) => () => void;
+  /** The chord prefix currently held, for the status hint. */
+  pendingChord: string | null;
+}
+
+const KeyboardContext = createContext<KeyboardContextValue | null>(null);
+
+/** True when the event target is somewhere the user is typing. */
+function isEditable(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  const tag = target.tagName;
+  return (
+    tag === "INPUT" ||
+    tag === "TEXTAREA" ||
+    tag === "SELECT" ||
+    target.isContentEditable ||
+    // Radix dialogs and comboboxes; treat their internals as text context.
+    target.getAttribute("role") === "textbox"
+  );
+}
+
+export function KeyboardProvider({ children }: { children: ReactNode }) {
+  const router = useRouter();
+  const registrations = useRef<Registration[]>([]);
+  const nextId = useRef(0);
+
+  const [pendingChord, setPendingChord] = useState<string | null>(null);
+  const chordTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearChord = useCallback(() => {
+    if (chordTimer.current) clearTimeout(chordTimer.current);
+    chordTimer.current = null;
+    setPendingChord(null);
+  }, []);
+
+  const register = useCallback((priority: number, handler: Handler) => {
+    const id = nextId.current++;
+    registrations.current.push({ id, priority, handler });
+    return () => {
+      registrations.current = registrations.current.filter((r) => r.id !== id);
+    };
+  }, []);
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      // Overlays first, then views, then global.
+      const ordered = [...registrations.current].sort((a, b) => b.priority - a.priority);
+      for (const { handler } of ordered) {
+        if (handler(event) === true) return;
+      }
+
+      const editable = isEditable(event.target);
+      const hasModifier = event.metaKey || event.ctrlKey || event.altKey;
+
+      // ---------------------------------------------------------------- chords
+      if (pendingChord === "g" && !hasModifier) {
+        const key = event.key.toLowerCase();
+        clearChord();
+
+        if (key in CHORD_ROUTES) {
+          event.preventDefault();
+          router.push(CHORD_ROUTES[key as ChordKey]);
+        }
+        // Any other key simply cancels the chord — no navigation, no side effect.
+        return;
+      }
+
+      if (event.key.toLowerCase() === "g" && !hasModifier && !editable) {
+        event.preventDefault();
+        setPendingChord("g");
+        if (chordTimer.current) clearTimeout(chordTimer.current);
+        chordTimer.current = setTimeout(clearChord, CHORD_TIMEOUT_MS);
+        return;
+      }
+
+      // ------------------------------------------------- single-key, non-typing
+      // Everything below is suppressed while typing, which is the whole reason
+      // `isEditable` exists.
+      if (editable || hasModifier) return;
+    }
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [router, pendingChord, clearChord]);
+
+  const value = useMemo<KeyboardContextValue>(
+    () => ({ register, pendingChord }),
+    [register, pendingChord],
+  );
+
+  return <KeyboardContext.Provider value={value}>{children}</KeyboardContext.Provider>;
+}
+
+export function useKeyboard(): KeyboardContextValue {
+  const value = useContext(KeyboardContext);
+  if (!value) throw new Error("useKeyboard must be used inside <KeyboardProvider>");
+  return value;
+}
+
+/**
+ * Register a keyboard handler for the lifetime of a component.
+ *
+ * The handler is kept in a ref so callers do not have to memoise it — an inline arrow function
+ * would otherwise re-register on every render, which is both wasteful and a source of
+ * ordering surprises.
+ */
+export function useKeyHandler(priority: number, handler: Handler): void {
+  const { register } = useKeyboard();
+  const ref = useRef(handler);
+  ref.current = handler;
+
+  useEffect(
+    () => register(priority, (event) => ref.current(event)),
+    [register, priority],
+  );
+}
+
+/** True while a chord prefix is held — drives the "G…" hint. */
+export function useChordHint(): string | null {
+  return useKeyboard().pendingChord;
+}
+
+export { isEditable };
