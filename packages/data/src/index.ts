@@ -41,14 +41,17 @@ export { newId } from "./ids";
 
 // ---------------------------------------------------------------------------- wire
 export {
+  CASCADE_CHILDREN,
   PRIMARY_KEYS,
   TABLE_ORDER,
   conflictTarget,
+  dexieKey,
   rowKey,
   stripServerOwned,
 } from "./wire";
 export type {
   AnyRow,
+  CascadeChild,
   EnergyLevel,
   FocusPhase,
   FocusSessionRow,
@@ -81,8 +84,11 @@ export {
   createTask,
   createTaskFromCapture,
   createWriteContext,
+  moveTimeBlock,
   patch,
   put,
+  resizeTimeBlock,
+  scheduleTask,
   setTaskCompleted,
   softDelete,
 } from "./db/repo";
@@ -121,3 +127,19 @@ export {
   setQuadrant,
 } from "./domain/eisenhower";
 export type { EisenhowerFlags, Quadrant } from "./domain/eisenhower";
+
+export {
+  DAY_MINUTES,
+  DEFAULT_BLOCK_MINUTES,
+  SLOT_MINUTES,
+  daySpanOf,
+  durationMinutes,
+  formatMinutes,
+  layoutDay,
+  nowLineMinutes,
+  placeBlock,
+  scheduledMinutes,
+  snapToSlot,
+  spansOverlap,
+} from "./domain/schedule";
+export type { DaySpan, PositionedBlock } from "./domain/schedule";

@@ -1,5 +1,6 @@
 "use client";
 
+import { type DayKey, isDayKey, todayKey } from "@rainflow/data";
 import { useSearchParams } from "next/navigation";
 import { useCallback } from "react";
 
@@ -46,12 +47,29 @@ export function useUrlState() {
   const view: ViewMode =
     rawView === "board" || rawView === "calendar" ? rawView : "list";
 
+  /*
+   * The calendar's date. Validated rather than trusted: `?day=lol` reaching `parseDayKey` would
+   * throw during render and blank the route, and a URL is user-editable by definition.
+   *
+   * `todayKey()` resolves through APP_TIMEZONE, so the default is today in Phnom Penh regardless
+   * of where the browser thinks it is.
+   */
+  const rawDay = params.get("day");
+  const day: DayKey = isDayKey(rawDay) ? rawDay : todayKey();
+
   return {
     taskId,
     zenTaskId,
     view,
+    day,
     openTask: useCallback((id: string) => set("task", id), [set]),
     closeTask: useCallback(() => set("task", null), [set]),
+    setDay: useCallback(
+      // Today is the default, so it is dropped rather than written — and a bookmarked
+      // `/calendar` then always means "today" rather than the day it was bookmarked on.
+      (next: DayKey) => set("day", next === todayKey() ? null : next),
+      [set],
+    ),
     setView: useCallback(
       // `list` is the default, so it is dropped rather than written — keeps URLs clean.
       (mode: ViewMode) => set("view", mode === "list" ? null : mode),

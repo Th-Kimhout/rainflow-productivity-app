@@ -41,6 +41,14 @@ export class FakeServer {
 
   requestCount = 0;
 
+  /**
+   * Monotonic write counter per row. Presence assertions cannot tell a correctly-ordered drain
+   * from one that only happened to work — a real Postgres would have rejected the child-first
+   * ordering outright, and this is what lets a test see the difference.
+   */
+  private writeSeq = 0;
+  private writeOrder = new Map<string, number>();
+
   constructor() {
     for (const t of TABLE_ORDER) this.tables.set(t, new Map());
   }
@@ -85,6 +93,7 @@ export class FakeServer {
       const key = rowKey(table, incoming as never);
       const row = { ...incoming, updated_at: stampedAt } as AnyRow;
       store.set(key, row);
+      this.writeOrder.set(`${table}|${key}`, ++this.writeSeq);
       written.push(row);
     }
 
@@ -148,6 +157,13 @@ export class FakeServer {
   /** Deliver an out-of-band Realtime event, as if a different device had written. */
   async pushRealtime(table: TableName, row: AnyRow): Promise<void> {
     await Promise.all([...this.handlers].map((h) => h(table, row)));
+  }
+
+  /** When a row was last written, relative to every other row. Throws if it never was. */
+  order(table: TableName, key: string): number {
+    const seq = this.writeOrder.get(`${table}|${key}`);
+    if (seq === undefined) throw new Error(`${table} ${key} was never written`);
+    return seq;
   }
 
   /** Every table's rows keyed by pk — for asserting convergence between two peers. */

@@ -1,5 +1,18 @@
+import {
+  DEFAULT_BLOCK_MINUTES,
+  SLOT_MINUTES,
+  durationMinutes,
+  placeBlock,
+} from "../domain/schedule";
 import { newId } from "../ids";
-import { type AnyRow, type TableName, type WireTables } from "../wire";
+import type { DayKey } from "../time/tz";
+import {
+  CASCADE_CHILDREN,
+  type AnyRow,
+  type TableName,
+  type WireTables,
+  dexieKey,
+} from "../wire";
 import { enqueue } from "./outbox";
 import type { RainflowDB } from "./schema";
 
@@ -96,10 +109,19 @@ export async function patch<K extends TableName>(
 }
 
 /**
- * Soft delete. Sets `deleted_at` and syncs it as an ordinary update.
+ * Soft delete, cascading to dependent rows.
  *
  * Never a hard delete: a removed row would simply vanish from this device while other devices
  * kept it, with nothing on the wire to tell them otherwise. The tombstone IS the message.
+ *
+ * THE CASCADE IS THE POINT. Because this is an update rather than a `DELETE`, the SQL
+ * `on delete cascade` on `time_block.task_id` never fires — so without the walk below, deleting
+ * a task leaves live time blocks pointing at a tombstone and the calendar goes on drawing them.
+ * `CASCADE_CHILDREN` in wire.ts declares which relationships need it and why.
+ *
+ * Depth-first and idempotent: an already-deleted row is skipped rather than re-stamped, which
+ * both avoids pointless outbox traffic and terminates the `task.parent_id` self-reference on a
+ * cycle. A cycle should be impossible, but "should be" is not a termination condition.
  */
 export async function softDelete<K extends TableName>(
   db: RainflowDB,
@@ -107,9 +129,49 @@ export async function softDelete<K extends TableName>(
   table: K,
   key: string | string[],
 ): Promise<void> {
-  await patch(db, ctx, table, key, {
-    deleted_at: ctx.now().toISOString(),
-  } as Partial<WireTables[K]>);
+  const at = ctx.now().toISOString();
+  await softDeleteInto(db, ctx, table, key, at, new Set());
+}
+
+async function softDeleteInto(
+  db: RainflowDB,
+  ctx: WriteContext,
+  table: TableName,
+  key: string | string[],
+  at: string,
+  seen: Set<string>,
+): Promise<void> {
+  const marker = `${table}:${Array.isArray(key) ? key.join("|") : key}`;
+  if (seen.has(marker)) return;
+  seen.add(marker);
+
+  const current = (await db.table(table).get(key)) as AnyRow | undefined;
+  if (!current || current.deleted_at !== null) return;
+
+  /*
+   * Children first, then the parent. The order is what keeps the drain valid: `TABLE_ORDER`
+   * sends parents before children, so a partially-drained batch can leave a live child under a
+   * deleted parent — recoverable, since the child's tombstone is still queued — but never the
+   * reverse, which would be a foreign key violation if these were hard deletes and is simply
+   * confusing here.
+   */
+  for (const child of CASCADE_CHILDREN[table] ?? []) {
+    // Every cascade points at the parent's `id`; nothing here cascades off a compound key.
+    const parentId = (current as { id?: string }).id;
+    if (parentId === undefined) continue;
+
+    const rows = (await db
+      .table(child.table)
+      .where(child.column)
+      .equals(parentId)
+      .toArray()) as AnyRow[];
+
+    for (const row of rows) {
+      await softDeleteInto(db, ctx, child.table, dexieKey(child.table, row as never), at, seen);
+    }
+  }
+
+  await patch(db, ctx, table, key, { deleted_at: at } as Partial<WireTables[TableName]>);
 }
 
 /**
@@ -208,6 +270,80 @@ export async function createTaskFromCapture(
   }
 
   return task;
+}
+
+/**
+ * Put a task on the calendar (§3.2 timeboxing).
+ *
+ * A task can have MANY blocks. §6 modelled timeboxing as `timeboxStart`/`timeboxEnd` columns on
+ * the task itself, which gave each task exactly one slot for its whole life — so rescheduling
+ * destroyed the original plan and "I'll do an hour now and finish it tonight" was unsayable.
+ * ADR 0001 decision 8 split it into its own table for exactly that reason.
+ *
+ * Length falls back to the task's own estimate before the global default, so dragging a task
+ * you have already sized onto the grid reserves the time you said it needed.
+ */
+export async function scheduleTask(
+  db: RainflowDB,
+  ctx: WriteContext,
+  input: {
+    taskId: string;
+    day: DayKey;
+    /** Minutes into the day. Snapped to the grid by `placeBlock`. */
+    startMinute: number;
+    lengthMinutes?: number;
+    id?: string;
+  },
+): Promise<WireTables["time_block"]> {
+  const task = await db.task.get(input.taskId);
+  const length =
+    input.lengthMinutes ?? task?.estimated_mins ?? DEFAULT_BLOCK_MINUTES;
+
+  return put(db, ctx, "time_block", {
+    id: input.id ?? newId(),
+    task_id: input.taskId,
+    ...placeBlock(input.day, input.startMinute, length),
+  });
+}
+
+/**
+ * Drag a block to a new time, keeping its length.
+ *
+ * Length is read from the block itself rather than passed in, so a move can never silently
+ * resize. The two operations stay separate because they are separate gestures — dragging the
+ * body versus dragging the edge — and conflating them is how a 45-minute block quietly becomes
+ * an hour.
+ */
+export async function moveTimeBlock(
+  db: RainflowDB,
+  ctx: WriteContext,
+  id: string,
+  day: DayKey,
+  startMinute: number,
+): Promise<WireTables["time_block"] | undefined> {
+  const block = await db.time_block.get(id);
+  if (!block) return undefined;
+
+  return patch(db, ctx, "time_block", id, placeBlock(day, startMinute, durationMinutes(block)));
+}
+
+/** Drag a block's bottom edge. The start is fixed; only the end moves. */
+export async function resizeTimeBlock(
+  db: RainflowDB,
+  ctx: WriteContext,
+  id: string,
+  lengthMinutes: number,
+): Promise<WireTables["time_block"] | undefined> {
+  const block = await db.time_block.get(id);
+  if (!block) return undefined;
+
+  const startMs = Date.parse(block.starts_at);
+  // The DB enforces `ends_at > starts_at`; refuse to build a row it would reject.
+  const length = Math.max(SLOT_MINUTES, Math.round(lengthMinutes));
+
+  return patch(db, ctx, "time_block", id, {
+    ends_at: new Date(startMs + length * 60_000).toISOString(),
+  });
 }
 
 /**

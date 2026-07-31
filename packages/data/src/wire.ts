@@ -163,6 +163,40 @@ export const PRIMARY_KEYS: { readonly [K in TableName]: readonly (keyof WireTabl
 } as const;
 
 /**
+ * Rows that must be deleted along with their parent, mirroring the SQL `on delete cascade`.
+ *
+ * This exists because RainFlow never issues a hard delete. `deleted_at` is set and synced as an
+ * ordinary update (see `softDelete`), so the database's cascade — which only fires on a real
+ * `DELETE` — never runs. Without a client-side equivalent, deleting a task leaves its time
+ * blocks alive and the calendar keeps drawing them under a task that no longer exists.
+ *
+ * That went unnoticed for three phases because every dependent so far was reached THROUGH its
+ * parent: an orphaned `task_tag` is invisible if nothing ever lists it. `time_block` is the
+ * first child with its own view, which is why the second synced table is where this surfaced.
+ *
+ * `focus_session` is deliberately absent. Its FK is `on delete set null`, not cascade — the
+ * §3.6 record of time actually spent is history, and history should outlive the task it was
+ * about.
+ */
+export interface CascadeChild {
+  table: TableName;
+  /** The column on the child pointing back at the parent's `id`. */
+  column: string;
+}
+
+export const CASCADE_CHILDREN: {
+  readonly [K in TableName]?: readonly CascadeChild[];
+} = {
+  task: [
+    { table: "task_tag", column: "task_id" },
+    { table: "time_block", column: "task_id" },
+    // Self-referential: `task.parent_id` cascades too, so deleting a parent takes its subtasks.
+    { table: "task", column: "parent_id" },
+  ],
+  habit: [{ table: "habit_log", column: "habit_id" }],
+} as const;
+
+/**
  * Stable string key for a row, used as the outbox's dedupe key and Dexie's lookup key.
  * Composite keys join with a character that cannot appear in a uuid.
  */
@@ -176,6 +210,26 @@ export function rowKey<K extends TableName>(table: K, row: Partial<WireTables[K]
     return String(v);
   });
   return parts.join("|");
+}
+
+/**
+ * The key shape Dexie expects for a row: a bare string for single-column tables, an array for
+ * `task_tag`'s compound key. `rowKey`'s joined string is for the outbox and for logging; this is
+ * for `table.get()` and `bulkGet()`. Mixing the two up yields a silent lookup miss, not an error.
+ */
+export function dexieKey<K extends TableName>(
+  table: K,
+  row: Partial<WireTables[K]>,
+): string | string[] {
+  const cols = PRIMARY_KEYS[table];
+  const parts = cols.map((c) => {
+    const v = (row as Record<string, unknown>)[c as string];
+    if (v === undefined || v === null) {
+      throw new Error(`dexieKey(${table}): missing primary key column "${String(c)}"`);
+    }
+    return String(v);
+  });
+  return parts.length === 1 ? parts[0]! : parts;
 }
 
 /** `on_conflict` target for a PostgREST upsert. */

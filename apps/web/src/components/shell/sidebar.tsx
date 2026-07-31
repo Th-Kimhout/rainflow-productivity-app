@@ -1,6 +1,14 @@
 "use client";
 
-import { BarChart3, CalendarCheck, Grid2x2, Inbox, LogOut, Repeat } from "lucide-react";
+import {
+  BarChart3,
+  CalendarCheck,
+  CalendarRange,
+  Grid2x2,
+  Inbox,
+  LogOut,
+  Repeat,
+} from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -22,6 +30,7 @@ const NAV = [
   { href: "/today", label: "Today", icon: CalendarCheck, chord: "G T" },
   { href: "/inbox", label: "Inbox", icon: Inbox, chord: "G I" },
   { href: "/matrix", label: "Matrix", icon: Grid2x2, chord: "G E" },
+  { href: "/calendar", label: "Calendar", icon: CalendarRange, chord: "G C" },
   { href: "/habits", label: "Habits", icon: Repeat, chord: "G H" },
   { href: "/analytics", label: "Analytics", icon: BarChart3, chord: "G A" },
 ] as const;

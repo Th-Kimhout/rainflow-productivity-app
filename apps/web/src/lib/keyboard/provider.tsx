@@ -46,6 +46,7 @@ const CHORD_ROUTES = {
   t: "/today",
   i: "/inbox",
   e: "/matrix",
+  c: "/calendar",
   h: "/habits",
   a: "/analytics",
 } as const;
@@ -141,20 +142,22 @@ export function KeyboardProvider({ children }: { children: ReactNode }) {
       const hasModifier = event.metaKey || event.ctrlKey || event.altKey;
 
       /*
-       * Overlays first, then views, then global.
+       * ---------------------------------------------------------------- chords
        *
-       * The `editable` filter has to happen HERE, before dispatch — not only around the chord
-       * logic below. Handlers used to receive every event regardless, which meant typing "1" into
-       * the inspector's estimate field moved the task to another quadrant and typing "j" into a
-       * title moved the list selection.
+       * BOTH halves of a chord are resolved BEFORE handlers are dispatched. `G` is reserved
+       * globally, and so is whatever key follows it.
+       *
+       * Dispatching first breaks the chord system in two ways, and only the second is obvious:
+       *
+       *   * A view that claims `G` for anything would stop the chord ever starting, silently
+       *     disabling navigation on that page.
+       *   * A view that binds a letter which is also a chord target eats the second half. The
+       *     calendar binds `T` for "jump to today", so `G T` would navigate everywhere in the
+       *     app except from the calendar.
+       *
+       * The alternative is asking every view to check for a pending chord before claiming a
+       * key, which is the kind of rule that gets followed three times and forgotten the fourth.
        */
-      const ordered = [...registrations.current].sort((a, b) => b.priority - a.priority);
-      for (const { handler, whenTyping } of ordered) {
-        if (editable && !whenTyping) continue;
-        if (handler(event) === true) return;
-      }
-
-      // ---------------------------------------------------------------- chords
       if (pendingChord === "g" && !hasModifier) {
         const key = event.key.toLowerCase();
         clearChord();
@@ -175,10 +178,19 @@ export function KeyboardProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      // ------------------------------------------------- single-key, non-typing
-      // Everything below is suppressed while typing, which is the whole reason
-      // `isEditable` exists.
-      if (editable || hasModifier) return;
+      /*
+       * Overlays first, then views, then global.
+       *
+       * The `editable` filter has to happen HERE, before dispatch. Handlers used to receive
+       * every event regardless, which meant typing "1" into the inspector's estimate field
+       * moved the task to another quadrant and typing "j" into a title moved the list
+       * selection.
+       */
+      const ordered = [...registrations.current].sort((a, b) => b.priority - a.priority);
+      for (const { handler, whenTyping } of ordered) {
+        if (editable && !whenTyping) continue;
+        if (handler(event) === true) return;
+      }
     }
 
     window.addEventListener("keydown", onKeyDown);

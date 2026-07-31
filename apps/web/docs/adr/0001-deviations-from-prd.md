@@ -93,8 +93,27 @@ there, add — never omit and assume the remote value survives.
 | `HabitLog.completedAt` | → `log_date date` + `completed_at`, `unique(habit_id, log_date)` | §6 permitted completing the same habit twice in one day; streaks need a date, not a timestamp |
 | `FocusSession.durationMin`, `completedAt` | → `started_at` / `ended_at` / `planned_mins` / `actual_secs` / `was_completed` / `phase` | §3.6's "top focus hours" is uncomputable without a start time; §3.3 needs resumability |
 | everywhere | + `updated_at`, `deleted_at`, `client_updated_at`, `client_id`; **no `gen_random_uuid()` default** | Offline writes must know their own id before reaching the server, and deletes must propagate as tombstones |
-| `onDelete: Cascade` / `SetNull` | kept as deferrable constraints, never actually triggered | Soft delete; deferral removes intra-batch ordering requirements |
+| `onDelete: Cascade` / `SetNull` | kept as deferrable constraints, never actually triggered; **cascade re-implemented client-side** | Soft delete; deferral removes intra-batch ordering requirements — see below |
 | `Note`, `NoteLink`, `[[backlinks]]` | never created | §3.5 reduced — see below |
+
+### Soft delete means SQL `on delete cascade` never fires
+
+Every delete in RainFlow sets `deleted_at` and syncs it as an ordinary update, because a tombstone
+is the only thing that can tell another device a row is gone. A consequence that is easy to miss:
+the database's `on delete cascade` only runs on a real `DELETE`, so **it never runs here at all.**
+
+Deleting a task therefore left its `time_block` rows alive, and the calendar went on drawing them
+under a task that no longer existed. This went unnoticed through Phase 3 because every child up to
+that point (`task_tag`, subtasks) is only ever reached *through* its parent — an orphan with no
+view of its own is invisible. `time_block` is the first child with its own screen.
+
+The fix is `CASCADE_CHILDREN` in `wire.ts`, a declarative mirror of the SQL relationships that
+`softDelete` walks depth-first. `focus_session` is deliberately excluded: its FK is
+`on delete set null`, and §3.6's record of time actually spent should outlive the task it was about.
+
+**The general rule: any new FK needs a matching `CASCADE_CHILDREN` entry, or its children become
+orphans on delete.** The tests in `sync.test.ts` under "soft delete cascades to dependent rows"
+fail if the walk is removed.
 
 ## Scope reductions
 

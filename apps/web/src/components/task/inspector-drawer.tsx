@@ -6,16 +6,19 @@ import {
   type TaskRow,
   type TaskStatus,
   dayKeyOf,
+  durationMinutes,
+  formatMinutes,
   minutesIntoDay,
   patch,
   quadrantOf,
   softDelete,
 } from "@rainflow/data";
 import { AlertTriangle, Star, Trash2, X } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import { SubtaskTree } from "@/components/task/subtask-tree";
-import { useTask } from "@/lib/data/hooks";
+import { useTask, useTaskBlocks } from "@/lib/data/hooks";
 import { useWriteContext } from "@/lib/data/provider";
 import { PRIORITY, isEditable, useKeyHandler } from "@/lib/keyboard/provider";
 import { useUrlState } from "@/lib/url-state";
@@ -259,6 +262,13 @@ function InspectorBody({ task, onClose }: { task: TaskRow; onClose: () => void }
           />
         </section>
 
+        <section className="space-y-2">
+          <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+            Scheduled
+          </h3>
+          <ScheduledBlocks taskId={task.id} />
+        </section>
+
         <SubtaskTree parent={task} />
       </div>
 
@@ -307,6 +317,70 @@ function FlagToggle({
       {icon}
       {label}
     </button>
+  );
+}
+
+/**
+ * Every calendar block for this task (§3.2).
+ *
+ * A task can have several — ADR 0001 decision 8 split timeboxing out of the task row precisely so
+ * "an hour now, finish it tonight" is expressible. Without this list the second block would be
+ * invisible from the task's own view, and the inspector would quietly disagree with the calendar.
+ */
+function ScheduledBlocks({ taskId }: { taskId: string }) {
+  const { db, ctx } = useWriteContext();
+  const blocks = useTaskBlocks(taskId);
+
+  if (blocks === undefined) {
+    return <p className="text-xs text-muted-foreground">Loading…</p>;
+  }
+
+  if (blocks.length === 0) {
+    return (
+      <p className="text-xs text-muted-foreground">
+        Not on the calendar yet — drag it onto the grid from{" "}
+        <Link href="/calendar" className="text-rain underline-offset-2 hover:underline">
+          Calendar
+        </Link>
+        .
+      </p>
+    );
+  }
+
+  return (
+    <ul className="space-y-1">
+      {blocks.map((block) => {
+        const start = new Date(block.starts_at);
+        // `dayKeyOf` resolves through APP_TIMEZONE. A UTC slice of the ISO string would name
+        // the wrong day for anything after 17:00 Phnom Penh time.
+        const day = dayKeyOf(start);
+        const from = minutesIntoDay(start);
+        const to = from + durationMinutes(block);
+
+        return (
+          <li key={block.id} className="flex items-center gap-2 text-xs">
+            {/* The object form of `href` is what keeps `typedRoutes` happy with a query. */}
+            <Link
+              href={{ pathname: "/calendar", query: { day } }}
+              className="flex-1 truncate text-foreground hover:text-rain"
+            >
+              <span className="tabular-nums">{day}</span>{" "}
+              <span className="tabular-nums text-muted-foreground">
+                {formatMinutes(from)}–{formatMinutes(to)}
+              </span>
+            </Link>
+            <button
+              type="button"
+              onClick={() => void softDelete(db, ctx, "time_block", block.id)}
+              aria-label="Unschedule this block"
+              className="shrink-0 text-muted-foreground hover:text-priority-high"
+            >
+              <X className="size-3" />
+            </button>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 

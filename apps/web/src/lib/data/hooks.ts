@@ -2,12 +2,17 @@
 
 import {
   type DayKey,
+  type PositionedBlock,
   type Quadrant,
   type TaskRow,
   type TaskStatus,
+  type TimeBlockRow,
   dayRange,
   displayPriority,
+  layoutDay,
+  previousDay,
   quadrantOf,
+  scheduledMinutes,
   todayKey,
 } from "@rainflow/data";
 import { useLiveQuery } from "dexie-react-hooks";
@@ -107,6 +112,112 @@ export function useSubtasks(parentId: string | null): TaskRow[] | undefined {
 export function usePendingWrites(): number {
   const { db } = useData();
   return useLiveQuery(() => db.outbox.count(), [db]) ?? 0;
+}
+
+/** A positioned block plus the task it is for. `null` task = the row is an orphan; see below. */
+export interface ScheduledBlock extends PositionedBlock<TimeBlockRow> {
+  task: TaskRow | null;
+}
+
+export interface DaySchedule {
+  blocks: ScheduledBlock[];
+  /** Committed minutes, counting overlapping blocks once. */
+  plannedMinutes: number;
+}
+
+/**
+ * A day's timebox grid (§3.2).
+ *
+ * The Dexie index is `[task_id+starts_at]`, not a plain range on `starts_at`, so this reads the
+ * table and filters in JS. Deliberate: an IndexedDB range query on `starts_at` would compare ISO
+ * strings, which sorts correctly only while every timestamp shares one offset — true today,
+ * silently wrong the moment a row is written with a `+07:00` suffix instead of `Z`. At one day's
+ * worth of blocks the filter is a few microseconds.
+ *
+ * A block whose task is missing or deleted keeps `task: null` rather than being dropped. The
+ * cascade in `softDelete` means that should be impossible, but a row that arrives from another
+ * device mid-cascade can be briefly orphaned — and showing it greyed out is more honest than
+ * silently hiding time the user has committed.
+ */
+export function useDaySchedule(day: DayKey): DaySchedule | undefined {
+  const { db } = useData();
+
+  return useLiveQuery(async () => {
+    /*
+     * Yesterday is included because a block that started before midnight still occupies part of
+     * this morning, and `layoutDay` clips it. Filtering by `starts_at >= today` would make an
+     * overnight block vanish from the day it actually runs into.
+     */
+    const { start } = dayRange(previousDay(day));
+    const { end } = dayRange(day);
+
+    const rows = live(
+      await db.time_block
+        .toArray()
+        .then((all) =>
+          all.filter((b) => {
+            const s = Date.parse(b.starts_at);
+            return s >= start.getTime() && s < end.getTime();
+          }),
+        ),
+    );
+
+    const positioned = layoutDay(rows, day);
+    const tasks = await db.task.bulkGet(positioned.map((p) => p.block.task_id));
+
+    return {
+      blocks: positioned.map((p, i) => {
+        const task = tasks[i];
+        return { ...p, task: task && task.deleted_at === null ? task : null };
+      }),
+      plannedMinutes: scheduledMinutes(rows, day),
+    };
+  }, [db, day]);
+}
+
+/** Every live block for a task, oldest first — the inspector's "when am I doing this" list. */
+export function useTaskBlocks(taskId: string | null): TimeBlockRow[] | undefined {
+  const { db } = useData();
+
+  return useLiveQuery(async () => {
+    if (!taskId) return [];
+    const rows = await db.time_block.where("task_id").equals(taskId).toArray();
+    return live(rows).sort((a, b) => a.starts_at.localeCompare(b.starts_at));
+  }, [db, taskId]);
+}
+
+/**
+ * Candidates for the drag-onto-the-grid rail.
+ *
+ * Anything open and unfinished, with already-scheduled tasks pushed to the bottom rather than
+ * removed — a task often needs a second sitting, and hiding it once it has one block would make
+ * that impossible to arrange by drag.
+ */
+export function useSchedulableTasks(day: DayKey): TaskRow[] | undefined {
+  const { db } = useData();
+
+  return useLiveQuery(async () => {
+    const tasks = live(await db.task.toArray()).filter(
+      (t) => t.status !== "COMPLETED" && t.status !== "ARCHIVED",
+    );
+
+    const { start, end } = dayRange(day);
+    const scheduled = new Set(
+      live(await db.time_block.toArray())
+        .filter((b) => {
+          const s = Date.parse(b.starts_at);
+          return s >= start.getTime() && s < end.getTime();
+        })
+        .map((b) => b.task_id),
+    );
+
+    return tasks.sort((a, b) => {
+      const aOn = scheduled.has(a.id) ? 1 : 0;
+      const bOn = scheduled.has(b.id) ? 1 : 0;
+      if (aOn !== bOn) return aOn - bOn;
+      return byListOrder(a, b);
+    });
+  }, [db, day]);
 }
 
 /**

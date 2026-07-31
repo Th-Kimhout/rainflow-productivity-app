@@ -196,6 +196,7 @@ describe("G chords", () => {
       ["t", "/today"],
       ["i", "/inbox"],
       ["e", "/matrix"],
+      ["c", "/calendar"],
       ["h", "/habits"],
       ["a", "/analytics"],
     ] as const) {
@@ -225,6 +226,42 @@ describe("G chords", () => {
     press("g", input);
     press("t", input);
     expect(push).not.toHaveBeenCalled();
+  });
+
+  it("resolves the chord even when a view binds the same letter", () => {
+    /*
+     * The calendar binds `T` for "jump to today", which is also the second half of `G T`. If
+     * registered handlers saw the key first, `G T` would silently stop navigating on that one
+     * page — the chord must own the key while it is held.
+     */
+    const seen: string[] = [];
+    render(
+      <KeyboardProvider>
+        <Probe seen={seen} claim />
+      </KeyboardProvider>,
+    );
+
+    press("g");
+    press("t");
+
+    expect(push).toHaveBeenCalledWith("/today");
+    expect(seen).toEqual([]);
+  });
+
+  it("still delivers the key once the chord has resolved", () => {
+    const seen: string[] = [];
+    render(
+      <KeyboardProvider>
+        <Probe seen={seen} claim />
+      </KeyboardProvider>,
+    );
+
+    press("g");
+    press("t");
+    press("t");
+
+    // Only the second, chord-free `t` reaches the view.
+    expect(seen).toEqual(["t"]);
   });
 
   it("expires a stale chord prefix", async () => {

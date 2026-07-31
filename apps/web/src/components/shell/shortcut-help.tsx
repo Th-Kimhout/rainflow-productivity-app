@@ -26,8 +26,16 @@ const GROUPS: Array<{ title: string; keys: Array<[string, string]> }> = [
       ["G T", "Today"],
       ["G I", "Inbox"],
       ["G E", "Eisenhower matrix"],
+      ["G C", "Calendar"],
       ["G H", "Habits"],
       ["G A", "Analytics"],
+    ],
+  },
+  {
+    title: "Calendar",
+    keys: [
+      ["[ / ]", "Previous / next day"],
+      ["T", "Jump to today"],
     ],
   },
   {

@@ -3,8 +3,17 @@ import "fake-indexeddb/auto";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { pendingCount } from "../../db/outbox";
-import { createTask, createWriteContext, patch, put, softDelete } from "../../db/repo";
+import {
+  createTask,
+  createWriteContext,
+  moveTimeBlock,
+  patch,
+  put,
+  scheduleTask,
+  softDelete,
+} from "../../db/repo";
 import { RainflowDB } from "../../db/schema";
+import { daySpanOf } from "../../domain/schedule";
 import type { AnyRow, TaskRow } from "../../wire";
 import { applyRemoteRows } from "../apply-remote";
 import { getCursor, pullAll, pullTable } from "../pull";
@@ -620,6 +629,9 @@ describe("multi-table integrity", () => {
     expect(server.get("tag", "g1")).toBeDefined();
     expect(server.get("task", "t1")).toBeDefined();
     expect(server.get("task_tag", "t1|g1")).toBeDefined();
+    // Presence alone would also pass for a child-first drain, which real Postgres rejects.
+    expect(server.order("tag", "g1")).toBeLessThan(server.order("task_tag", "t1|g1"));
+    expect(server.order("task", "t1")).toBeLessThan(server.order("task_tag", "t1|g1"));
     expect(await pendingCount(a.db)).toBe(0);
   });
 
@@ -640,5 +652,243 @@ describe("multi-table integrity", () => {
       task_id: "t1",
       tag_id: "g1",
     });
+  });
+});
+
+/**
+ * `time_block` is the SECOND table to go through the full engine, and Phase 4 was sequenced here
+ * on purpose: anything in the sync machinery that only worked because there was one real table
+ * had to show itself now, while the engine is small enough to change, rather than after four
+ * more tables depend on the same code.
+ *
+ * One thing did. See the cascade tests below.
+ */
+describe("time_block as a second synced table", () => {
+  it("round-trips a block to another device", async () => {
+    const server = new FakeServer();
+    const a = peer(server, "laptop");
+    const b = peer(server, "phone");
+
+    await createTask(a.db, a.ctx, { title: "write the report", id: "t1" });
+    a.tick();
+    const created = await scheduleTask(a.db, a.ctx, {
+      taskId: "t1",
+      day: "2026-08-12",
+      startMinute: 9 * 60,
+      lengthMinutes: 90,
+      id: "tb1",
+    });
+    await drainUntilQuiet(a.db, a.transport);
+
+    server.tick();
+    await pullAll(b.db, b.transport);
+
+    const onPhone = await b.db.time_block.get("tb1");
+    expect(onPhone).toMatchObject({
+      task_id: "t1",
+      starts_at: created.starts_at,
+      ends_at: created.ends_at,
+    });
+    // And it lands on the phone's grid where the laptop put it, not at some UTC offset.
+    expect(daySpanOf(onPhone!, "2026-08-12")).toMatchObject({
+      startMin: 540,
+      endMin: 630,
+    });
+  });
+
+  it("drains the task before the block that references it", async () => {
+    const server = new FakeServer();
+    const a = peer(server, "laptop");
+
+    /*
+     * Written in the opposite order to TABLE_ORDER on purpose — outbox seq would send the block
+     * first, and PostgREST sends one request per table rather than one deferred transaction, so
+     * the FK would reject it. The drain's TABLE_ORDER grouping is what saves this.
+     */
+    await put(a.db, a.ctx, "time_block", {
+      id: "tb1",
+      task_id: "t1",
+      starts_at: "2026-08-12T02:00:00.000Z",
+      ends_at: "2026-08-12T03:00:00.000Z",
+    });
+    a.tick();
+    await createTask(a.db, a.ctx, { title: "later", id: "t1" });
+
+    await drainUntilQuiet(a.db, a.transport);
+
+    expect(server.order("task", "t1")).toBeLessThan(server.order("time_block", "tb1"));
+    expect(await pendingCount(a.db)).toBe(0);
+  });
+
+  it("moves a block without resizing it", async () => {
+    const server = new FakeServer();
+    const a = peer(server, "laptop");
+
+    await createTask(a.db, a.ctx, { title: "t", id: "t1" });
+    await scheduleTask(a.db, a.ctx, {
+      taskId: "t1",
+      day: "2026-08-12",
+      startMinute: 9 * 60,
+      lengthMinutes: 45,
+      id: "tb1",
+    });
+
+    a.tick();
+    await moveTimeBlock(a.db, a.ctx, "tb1", "2026-08-12", 14 * 60 + 7);
+
+    const moved = (await a.db.time_block.get("tb1"))!;
+    expect(daySpanOf(moved, "2026-08-12")).toMatchObject({
+      // Snapped to the 15-minute grid, and still 45 minutes long.
+      startMin: 14 * 60,
+      endMin: 14 * 60 + 45,
+    });
+
+    await drainUntilQuiet(a.db, a.transport);
+    expect(server.get("time_block", "tb1")).toMatchObject({ starts_at: moved.starts_at });
+  });
+});
+
+/**
+ * The bug `time_block` exposed.
+ *
+ * RainFlow never issues a hard DELETE — `softDelete` sets `deleted_at` and syncs it as an
+ * ordinary update — so the SQL `on delete cascade` on `time_block.task_id` never fires. For
+ * three phases that was invisible, because every child so far (`task_tag`, subtasks) is only
+ * ever reached through its parent. `time_block` is the first child with a view of its own, and
+ * an orphaned block draws itself on the calendar under a task that no longer exists.
+ */
+describe("soft delete cascades to dependent rows", () => {
+  it("deletes a task's time blocks with it", async () => {
+    const server = new FakeServer();
+    const a = peer(server, "laptop");
+
+    await createTask(a.db, a.ctx, { title: "doomed", id: "t1" });
+    await scheduleTask(a.db, a.ctx, {
+      taskId: "t1",
+      day: "2026-08-12",
+      startMinute: 9 * 60,
+      id: "tb1",
+    });
+    await scheduleTask(a.db, a.ctx, {
+      taskId: "t1",
+      day: "2026-08-13",
+      startMinute: 9 * 60,
+      id: "tb2",
+    });
+    // A block on an unrelated task, to prove the cascade is scoped and not a bulk wipe.
+    await createTask(a.db, a.ctx, { title: "survivor", id: "t2" });
+    await scheduleTask(a.db, a.ctx, {
+      taskId: "t2",
+      day: "2026-08-12",
+      startMinute: 11 * 60,
+      id: "tb3",
+    });
+
+    a.tick();
+    await softDelete(a.db, a.ctx, "task", "t1");
+
+    expect((await a.db.time_block.get("tb1"))!.deleted_at).not.toBeNull();
+    expect((await a.db.time_block.get("tb2"))!.deleted_at).not.toBeNull();
+    expect((await a.db.time_block.get("tb3"))!.deleted_at).toBeNull();
+  });
+
+  it("propagates the whole cascade to another device", async () => {
+    const server = new FakeServer();
+    const a = peer(server, "laptop");
+    const b = peer(server, "phone");
+
+    await createTask(a.db, a.ctx, { title: "doomed", id: "t1" });
+    await scheduleTask(a.db, a.ctx, {
+      taskId: "t1",
+      day: "2026-08-12",
+      startMinute: 9 * 60,
+      id: "tb1",
+    });
+    await drainUntilQuiet(a.db, a.transport);
+    server.tick();
+    await pullAll(b.db, b.transport);
+    expect((await b.db.time_block.get("tb1"))!.deleted_at).toBeNull();
+
+    a.tick();
+    await softDelete(a.db, a.ctx, "task", "t1");
+    await drainUntilQuiet(a.db, a.transport);
+    server.tick();
+    await pullAll(b.db, b.transport);
+
+    // The child tombstone has to travel on the wire in its own right. A cascade that only ran
+    // locally would leave the phone drawing the block forever.
+    expect((await b.db.time_block.get("tb1"))!.deleted_at).not.toBeNull();
+  });
+
+  it("deletes subtasks and tags with their parent", async () => {
+    const server = new FakeServer();
+    const a = peer(server, "laptop");
+
+    await createTask(a.db, a.ctx, { title: "parent", id: "p1" });
+    await createTask(a.db, a.ctx, { title: "child", id: "c1", parentId: "p1" });
+    await createTask(a.db, a.ctx, { title: "grandchild", id: "c2", parentId: "c1" });
+    await put(a.db, a.ctx, "tag", { id: "g1", name: "work", color: "#34d399" });
+    await put(a.db, a.ctx, "task_tag", { task_id: "p1", tag_id: "g1" });
+
+    a.tick();
+    await softDelete(a.db, a.ctx, "task", "p1");
+
+    // `task.parent_id` cascades in SQL too, and the recursion has to follow it all the way down.
+    expect((await a.db.task.get("c1"))!.deleted_at).not.toBeNull();
+    expect((await a.db.task.get("c2"))!.deleted_at).not.toBeNull();
+    expect((await a.db.task_tag.get(["p1", "g1"]))!.deleted_at).not.toBeNull();
+    // The tag itself is shared and survives — only the link dies.
+    expect((await a.db.tag.get("g1"))!.deleted_at).toBeNull();
+  });
+
+  it("leaves focus history alone", async () => {
+    const server = new FakeServer();
+    const a = peer(server, "laptop");
+
+    await createTask(a.db, a.ctx, { title: "done with", id: "t1" });
+    await put(a.db, a.ctx, "focus_session", {
+      id: "f1",
+      task_id: "t1",
+      started_at: "2026-08-12T02:00:00.000Z",
+      ended_at: "2026-08-12T02:25:00.000Z",
+      planned_mins: 25,
+      actual_secs: 1500,
+      was_completed: true,
+      phase: "FOCUS",
+      energy: null,
+      notes: null,
+    });
+
+    a.tick();
+    await softDelete(a.db, a.ctx, "task", "t1");
+
+    // `focus_session.task_id` is `on delete set null`, not cascade: §3.6's record of time
+    // actually spent is history, and history outlives the task it was about.
+    expect((await a.db.focus_session.get("f1"))!.deleted_at).toBeNull();
+  });
+
+  it("is idempotent — a second delete queues nothing", async () => {
+    const server = new FakeServer();
+    const a = peer(server, "laptop");
+
+    await createTask(a.db, a.ctx, { title: "t", id: "t1" });
+    await scheduleTask(a.db, a.ctx, {
+      taskId: "t1",
+      day: "2026-08-12",
+      startMinute: 9 * 60,
+      id: "tb1",
+    });
+    await softDelete(a.db, a.ctx, "task", "t1");
+    await drainUntilQuiet(a.db, a.transport);
+
+    const deletedAt = (await a.db.time_block.get("tb1"))!.deleted_at;
+
+    a.tick();
+    await softDelete(a.db, a.ctx, "task", "t1");
+
+    // Re-stamping a tombstone would push a pointless upsert AND move `client_updated_at`
+    // forward, which could beat a legitimate concurrent edit from another device.
+    expect(await pendingCount(a.db)).toBe(0);
+    expect((await a.db.time_block.get("tb1"))!.deleted_at).toBe(deletedAt);
   });
 });
