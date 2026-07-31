@@ -47,6 +47,9 @@ export function useUrlState() {
   const view: ViewMode =
     rawView === "board" || rawView === "calendar" ? rawView : "list";
 
+  /** Which tag `/tags` is showing. Null before one is chosen. */
+  const tag = params.get("tag");
+
   /*
    * The calendar's date. Validated rather than trusted: `?day=lol` reaching `parseDayKey` would
    * throw during render and blank the route, and a URL is user-editable by definition.
@@ -62,12 +65,14 @@ export function useUrlState() {
     zenTaskId,
     view,
     day,
+    tag,
     openTask: useCallback((id: string) => set("task", id), [set]),
     closeTask: useCallback(() => set("task", null), [set]),
     // Zen mode is in the URL like everything else, so it survives a reload — walking back into
     // a session you left should not mean re-entering it (§3.3).
     openZen: useCallback((id: string) => set("zen", id), [set]),
     closeZen: useCallback(() => set("zen", null), [set]),
+    setTag: useCallback((name: string | null) => set("tag", name), [set]),
     setDay: useCallback(
       // Today is the default, so it is dropped rather than written — and a bookmarked
       // `/calendar` then always means "today" rather than the day it was bookmarked on.

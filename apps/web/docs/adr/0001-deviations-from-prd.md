@@ -246,6 +246,19 @@ were never tried.
 Charts are hand-written SVG. Recharts and similar are 100–300 KB for what is three bar charts with
 fixed axes, and each ships responsive-container machinery that fights the flex layout.
 
+### Tags reach the UI late, and via `?tag=` rather than `/tag/[slug]`
+
+§3.1's capture grammar wrote tags that nothing ever read: typing `#project` created a `tag` row and
+a `task_tag` link, and no surface in the app showed either. A parser that discards half its own
+output is worse than one that never had the feature, so `/tags`, the chips on task rows, and the
+inspector's tag editor close that loop.
+
+The route is a static page with `?tag=`, not the dynamic `/tag/[slug]` the plan named. The dynamic
+segment was built first and was wrong twice: it renders on demand rather than prerendering, spending
+the §7.1 FCP budget on a page whose data is entirely local; and `generateStaticParams` cannot help,
+because the tags only exist in IndexedDB — so the route could never be prefetched, and navigating to
+it offline would fail while every other route kept working.
+
 ### Board view: cut
 
 Listed in the plan as a candidate. Cut. §5.1's flow is capture → prioritise → timebox → execute →
@@ -253,13 +266,22 @@ review, and List, Matrix and Calendar cover every step of it. A Kanban board is 
 at `status`, which the list already groups by and the matrix already re-ranks — new surface area,
 no new capability, and one more view to keep in step with every future schema change.
 
-### End-to-end tests: not installed
+### End-to-end tests are hermetic — no credentials, no real database
 
-The plan called for ~5 Playwright specs. Playwright downloads several hundred megabytes of browser
-binaries, which is not something to add to someone's machine unprompted — flagged for Rain rather
-than done. The convergence suite already drives the real sync engine against a fake server, which
-is where the genuinely hard bugs live; what Playwright would add is coverage of the wiring between
-components, which is currently checked by hand.
+Five Playwright specs, run against a production build with a **fake Supabase URL and key**, with
+every request to that host intercepted. So they need no secrets, cannot touch the real project, and
+behave identically on a laptop and in CI.
+
+Signing in goes through the real login form rather than seeding a session. `@supabase/ssr` stores
+the session in chunked, base64-prefixed cookies whose layout is an internal detail — a spec that
+hand-writes them tests one reading of that library's source and breaks silently on any upgrade.
+
+This works because the app is designed for it: no view reads from the network, so a stubbed server
+is not a reduced version of the app. It is the app on a bad connection, which is a state it is meant
+to handle perfectly — and one spec asserts exactly that.
+
+The specs run against `build && start`, not `dev`, because Next 16 refuses a second dev server for a
+directory that already has one — which is every machine anyone would run these on.
 
 ## Scope reductions
 

@@ -28,6 +28,7 @@ const GROUPS: Array<{ title: string; keys: Array<[string, string]> }> = [
       ["G E", "Eisenhower matrix"],
       ["G C", "Calendar"],
       ["G H", "Habits"],
+      ["G G", "Tags"],
       ["G A", "Analytics"],
       ["G S", "Settings"],
     ],

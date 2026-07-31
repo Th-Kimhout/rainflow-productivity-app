@@ -8,6 +8,7 @@ import {
   createHabit,
   createTask,
   createWriteContext,
+  findOrCreateTag,
   moveTimeBlock,
   openFocusSession,
   patch,
@@ -17,6 +18,7 @@ import {
   setHabitLogged,
   setHabitRule,
   setSessionEnergy,
+  setTaskTag,
   softDelete,
 } from "../../db/repo";
 import { RainflowDB } from "../../db/schema";
@@ -857,6 +859,80 @@ describe("focus_session as a third synced table", () => {
       was_completed: true,
       actual_secs: 1500,
     });
+  });
+});
+
+describe("tags", () => {
+  it("finds an existing tag rather than creating a duplicate", async () => {
+    const server = new FakeServer();
+    const a = peer(server, "laptop");
+
+    const first = await findOrCreateTag(a.db, a.ctx, "Project");
+    a.tick();
+    const second = await findOrCreateTag(a.db, a.ctx, "project");
+
+    // Compared lower-cased, matching parseCapture and the partial unique index
+    // `tag_name_unique_live`. Otherwise #Project and #project become two tags that look
+    // identical in every list.
+    expect(second.id).toBe(first.id);
+    expect(await a.db.tag.count()).toBe(1);
+  });
+
+  it("revives the same join row when a tag is removed and re-added", async () => {
+    const server = new FakeServer();
+    const a = peer(server, "laptop");
+
+    await createTask(a.db, a.ctx, { title: "Tagged", id: "t1" });
+    const tag = await findOrCreateTag(a.db, a.ctx, "work");
+
+    await setTaskTag(a.db, a.ctx, "t1", tag.id, true);
+    a.tick();
+    await setTaskTag(a.db, a.ctx, "t1", tag.id, false);
+    a.tick();
+    await setTaskTag(a.db, a.ctx, "t1", tag.id, true);
+    await drainUntilQuiet(a.db, a.transport);
+
+    /*
+     * The pair is the primary key, so writing it again lands on the existing row in both Dexie
+     * and PostgREST. Pinned by a test because the obvious alternative — a fresh row per attach —
+     * would accumulate a tombstone and a live row for every toggle, and `useTaskTags` would then
+     * have to dedupe rather than just filter.
+     */
+    expect(await a.db.task_tag.count()).toBe(1);
+    expect((await a.db.task_tag.get(["t1", tag.id]))!.deleted_at).toBeNull();
+    expect(server.rows("task_tag")).toHaveLength(1);
+  });
+
+  it("propagates an untag as a tombstone", async () => {
+    const server = new FakeServer();
+    const a = peer(server, "laptop");
+    const b = peer(server, "phone");
+
+    await createTask(a.db, a.ctx, { title: "Tagged", id: "t1" });
+    const tag = await findOrCreateTag(a.db, a.ctx, "work");
+    await setTaskTag(a.db, a.ctx, "t1", tag.id, true);
+    await drainUntilQuiet(a.db, a.transport);
+    server.tick();
+    await pullAll(b.db, b.transport);
+    expect((await b.db.task_tag.get(["t1", tag.id]))!.deleted_at).toBeNull();
+
+    a.tick();
+    await setTaskTag(a.db, a.ctx, "t1", tag.id, false);
+    await drainUntilQuiet(a.db, a.transport);
+    server.tick();
+    await pullAll(b.db, b.transport);
+
+    expect((await b.db.task_tag.get(["t1", tag.id]))!.deleted_at).not.toBeNull();
+  });
+
+  it("does not create a join row for removing a tag that was never applied", async () => {
+    const server = new FakeServer();
+    const a = peer(server, "laptop");
+
+    await createTask(a.db, a.ctx, { title: "Untagged", id: "t1" });
+    await setTaskTag(a.db, a.ctx, "t1", "no-such-tag", false);
+
+    expect(await a.db.task_tag.count()).toBe(0);
   });
 });
 

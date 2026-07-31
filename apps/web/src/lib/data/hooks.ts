@@ -9,6 +9,7 @@ import {
   type PositionedBlock,
   type Quadrant,
   type StreakSummary,
+  type TagRow,
   type TaskRow,
   type TaskStatus,
   type TimeBlockRow,
@@ -119,6 +120,91 @@ export function useSubtasks(parentId: string | null): TaskRow[] | undefined {
     const rows = await db.task.where("parent_id").equals(parentId).toArray();
     return live(rows).sort((a, b) => a.sort_order - b.sort_order);
   }, [db, parentId]);
+}
+
+export interface TagWithCount {
+  tag: TagRow;
+  /** Open tasks carrying it. Completed and archived are excluded — see below. */
+  count: number;
+}
+
+/**
+ * Every live tag, with how many open tasks carry it.
+ *
+ * Counts exclude completed and archived tasks, because a tag list is a navigation surface: a
+ * `#refactor` showing 40 when 39 are done sends you to a page of finished work.
+ *
+ * Tags with no open tasks are KEPT rather than hidden. A tag you emptied by finishing everything
+ * is exactly the one you want to be able to find again.
+ */
+export function useTags(): TagWithCount[] | undefined {
+  const { db } = useData();
+
+  return useLiveQuery(async () => {
+    const [tags, links, tasks] = await Promise.all([
+      db.tag.toArray(),
+      db.task_tag.toArray(),
+      db.task.toArray(),
+    ]);
+
+    const open = new Set(
+      live(tasks)
+        .filter((t) => t.status !== "COMPLETED" && t.status !== "ARCHIVED")
+        .map((t) => t.id),
+    );
+
+    const counts = new Map<string, number>();
+    for (const link of live(links)) {
+      if (!open.has(link.task_id)) continue;
+      counts.set(link.tag_id, (counts.get(link.tag_id) ?? 0) + 1);
+    }
+
+    return live(tags)
+      .map((tag) => ({ tag, count: counts.get(tag.id) ?? 0 }))
+      .sort((a, b) => b.count - a.count || a.tag.name.localeCompare(b.tag.name));
+  }, [db]);
+}
+
+/** The tags on one task, for the inspector. */
+export function useTaskTags(taskId: string | null): TagRow[] | undefined {
+  const { db } = useData();
+
+  return useLiveQuery(async () => {
+    if (!taskId) return [];
+    const links = live(await db.task_tag.where("task_id").equals(taskId).toArray());
+    const tags = await db.tag.bulkGet(links.map((l) => l.tag_id));
+    return tags
+      .filter((t): t is TagRow => t !== undefined && t.deleted_at === null)
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [db, taskId]);
+}
+
+/**
+ * Tasks carrying a tag, looked up by NAME rather than id.
+ *
+ * The URL is `/tag/project`, not `/tag/<uuid>`, so the link is readable, typeable, and survives a
+ * tag being deleted and recreated. Matched lower-cased, matching `parseCapture` and the partial
+ * unique index.
+ */
+export function useTasksByTag(name: string): { tag: TagRow | null; tasks: TaskRow[] } | undefined {
+  const { db } = useData();
+  const wanted = name.trim().toLowerCase();
+
+  return useLiveQuery(async () => {
+    const tag =
+      live(await db.tag.toArray()).find((t) => t.name.toLowerCase() === wanted) ?? null;
+    if (!tag) return { tag: null, tasks: [] };
+
+    const links = live(await db.task_tag.where("tag_id").equals(tag.id).toArray());
+    const tasks = await db.task.bulkGet(links.map((l) => l.task_id));
+
+    return {
+      tag,
+      tasks: tasks
+        .filter((t): t is TaskRow => t !== undefined && t.deleted_at === null)
+        .sort(byListOrder),
+    };
+  }, [db, wanted]);
 }
 
 /** Live count of unsynced writes. Drives the pending-writes banner. */

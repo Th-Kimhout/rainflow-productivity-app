@@ -5,6 +5,8 @@ import { Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { Kbd } from "@/components/common/kbd";
+import { TagChips } from "@/components/task/tag-chips";
+import { useTaskTags } from "@/lib/data/hooks";
 import { useWriteContext } from "@/lib/data/provider";
 import { start as startFocus } from "@/lib/focus/store";
 import { PRIORITY, useKeyHandler } from "@/lib/keyboard/provider";
@@ -183,16 +185,20 @@ function TaskRowItem({
         className="size-4 shrink-0 cursor-pointer accent-rain"
       />
 
-      <button
-        type="button"
-        onClick={onOpen}
-        className={cn(
-          "min-w-0 flex-1 truncate text-left text-sm",
-          done ? "text-muted-foreground line-through" : "text-foreground",
-        )}
-      >
-        {task.title}
-      </button>
+      <div className="min-w-0 flex-1">
+        <button
+          type="button"
+          onClick={onOpen}
+          className={cn(
+            "block w-full truncate text-left text-sm",
+            done ? "text-muted-foreground line-through" : "text-foreground",
+          )}
+        >
+          {task.title}
+        </button>
+        {/* Tags are read-only here; the inspector is where they are edited. */}
+        <RowTags taskId={task.id} />
+      </div>
 
       <button
         type="button"
@@ -204,4 +210,17 @@ function TaskRowItem({
       </button>
     </li>
   );
+}
+
+/**
+ * A row's tags.
+ *
+ * Its own component so `useTaskTags` runs per row rather than the list joining every tag for
+ * every task up front. At a few hundred tasks either shape is fine; this one keeps the change to
+ * a single row when a tag is added, instead of re-running one query that repaints the whole list.
+ */
+function RowTags({ taskId }: { taskId: string }) {
+  const tags = useTaskTags(taskId);
+  if (!tags || tags.length === 0) return null;
+  return <TagChips tags={tags} className="mt-0.5" />;
 }

@@ -9,6 +9,7 @@ import {
   LogOut,
   Repeat,
   Settings,
+  Tags,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -33,6 +34,7 @@ const NAV = [
   { href: "/matrix", label: "Matrix", icon: Grid2x2, chord: "G E" },
   { href: "/calendar", label: "Calendar", icon: CalendarRange, chord: "G C" },
   { href: "/habits", label: "Habits", icon: Repeat, chord: "G H" },
+  { href: "/tags", label: "Tags", icon: Tags, chord: "G G" },
   { href: "/analytics", label: "Analytics", icon: BarChart3, chord: "G A" },
   { href: "/settings", label: "Settings", icon: Settings, chord: "G S" },
 ] as const;

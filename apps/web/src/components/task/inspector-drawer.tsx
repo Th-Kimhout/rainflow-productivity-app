@@ -11,6 +11,8 @@ import {
   minutesIntoDay,
   patch,
   quadrantOf,
+  findOrCreateTag,
+  setTaskTag,
   softDelete,
 } from "@rainflow/data";
 import { AlertTriangle, Play, Star, Trash2, X } from "lucide-react";
@@ -18,9 +20,10 @@ import Link from "next/link";
 import { useState } from "react";
 
 import { NotesEditor } from "@/components/task/notes-editor";
+import { TagChips } from "@/components/task/tag-chips";
 import { SubtaskTree } from "@/components/task/subtask-tree";
 import { start as startFocus } from "@/lib/focus/store";
-import { useTask, useTaskBlocks } from "@/lib/data/hooks";
+import { useTask, useTaskBlocks, useTaskTags } from "@/lib/data/hooks";
 import { useWriteContext } from "@/lib/data/provider";
 import { PRIORITY, isEditable, useKeyHandler } from "@/lib/keyboard/provider";
 import { useUrlState } from "@/lib/url-state";
@@ -242,6 +245,13 @@ function InspectorBody({ task, onClose }: { task: TaskRow; onClose: () => void }
           </div>
         </section>
 
+        <section className="space-y-2">
+          <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+            Tags
+          </h3>
+          <TagEditor task={task} />
+        </section>
+
         <NotesEditor task={task} />
 
         <section className="space-y-2">
@@ -441,3 +451,47 @@ function DueEditor({ task }: { task: TaskRow }) {
   );
 }
 
+
+/**
+ * Add and remove tags (§3.1's `#tag` grammar, from the other direction).
+ *
+ * Capture writes tags; this is where they can be changed afterwards without retyping the whole
+ * title. Names are lower-cased and find-or-create, matching `parseCapture` and the partial unique
+ * index — otherwise `#Project` and `#project` become two tags that look identical in every list.
+ */
+function TagEditor({ task }: { task: TaskRow }) {
+  const { db, ctx } = useWriteContext();
+  const tags = useTaskTags(task.id);
+  const [adding, setAdding] = useState("");
+
+  async function add() {
+    const name = adding.trim().replace(/^#/, "");
+    setAdding("");
+    if (!name) return;
+    const tag = await findOrCreateTag(db, ctx, name);
+    await setTaskTag(db, ctx, task.id, tag.id, true);
+  }
+
+  return (
+    <div className="space-y-1.5">
+      <TagChips
+        tags={tags ?? []}
+        onRemove={(tag) => void setTaskTag(db, ctx, task.id, tag.id, false)}
+      />
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          void add();
+        }}
+      >
+        <input
+          value={adding}
+          onChange={(e) => setAdding(e.target.value)}
+          placeholder="Add a tag…"
+          aria-label="Add a tag"
+          className="w-full rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground outline-none placeholder:text-muted-foreground focus:ring-1 focus:ring-rain"
+        />
+      </form>
+    </div>
+  );
+}

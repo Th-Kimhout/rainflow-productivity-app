@@ -95,6 +95,7 @@ export {
   createTask,
   createTaskFromCapture,
   createWriteContext,
+  findOrCreateTag,
   moveTimeBlock,
   openFocusSession,
   patch,
@@ -106,6 +107,7 @@ export {
   setHabitRule,
   setSessionEnergy,
   setTaskCompleted,
+  setTaskTag,
   softDelete,
 } from "./db/repo";
 export type { WriteContext } from "./db/repo";

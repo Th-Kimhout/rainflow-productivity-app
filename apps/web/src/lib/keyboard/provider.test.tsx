@@ -199,6 +199,7 @@ describe("G chords", () => {
       ["c", "/calendar"],
       ["h", "/habits"],
       ["a", "/analytics"],
+      ["g", "/tags"],
       ["s", "/settings"],
     ] as const) {
       push.mockClear();

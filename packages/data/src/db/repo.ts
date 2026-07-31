@@ -348,6 +348,65 @@ export async function resizeTimeBlock(
 }
 
 /**
+ * Attach or detach a tag.
+ *
+ * Detaching soft-deletes the join row; re-attaching writes the pair again, which REVIVES it
+ * rather than duplicating it. `task_tag`'s primary key IS `(task_id, tag_id)`, so both Dexie's
+ * `put` and the PostgREST upsert land on the existing row.
+ *
+ * Worth contrasting with `setHabitLogged`, which has to look the row up first. `habit_log`'s
+ * primary key is a separate uuid and the one-per-day rule is a SECOND unique index — so writing
+ * a fresh row for a day that already has a tombstone would upsert cleanly on `id` and then
+ * violate `unique(habit_id, log_date)`. Here there is no second constraint to violate.
+ */
+export async function setTaskTag(
+  db: RainflowDB,
+  ctx: WriteContext,
+  taskId: string,
+  tagId: string,
+  attached: boolean,
+): Promise<void> {
+  if (attached) {
+    await put(db, ctx, "task_tag", { task_id: taskId, tag_id: tagId });
+    return;
+  }
+
+  // Nothing to detach: `patch` on a missing row is a no-op, but skipping the transaction
+  // entirely keeps a stray click from touching the outbox at all.
+  if (!(await db.task_tag.get([taskId, tagId]))) return;
+
+  await patch(db, ctx, "task_tag", [taskId, tagId], {
+    deleted_at: ctx.now().toISOString(),
+  });
+}
+
+/**
+ * Find a tag by name, or create it.
+ *
+ * Names are compared lower-cased, matching the partial unique index `tag_name_unique_live` and
+ * `parseCapture`, which lower-cases what it extracts. Without that, `#Project` and `#project`
+ * become two tags that look identical in every list.
+ */
+export async function findOrCreateTag(
+  db: RainflowDB,
+  ctx: WriteContext,
+  name: string,
+): Promise<WireTables["tag"]> {
+  const wanted = name.trim().toLowerCase();
+
+  const existing = (await db.tag.toArray()).find(
+    (t) => t.deleted_at === null && t.name.toLowerCase() === wanted,
+  );
+  if (existing) return existing;
+
+  return put(db, ctx, "tag", {
+    id: newId(),
+    name: wanted,
+    color: "#38bdf8", // §4.1 Rain Blue.
+  });
+}
+
+/**
  * Create a habit (§3.4).
  *
  * The rule columns come from `ruleColumns`, which nulls every field not belonging to the chosen

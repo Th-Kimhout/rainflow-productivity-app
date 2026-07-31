@@ -49,6 +49,7 @@ const CHORD_ROUTES = {
   c: "/calendar",
   h: "/habits",
   a: "/analytics",
+  g: "/tags",
   s: "/settings",
 } as const;
 
