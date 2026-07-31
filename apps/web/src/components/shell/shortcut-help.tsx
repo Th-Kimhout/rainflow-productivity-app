@@ -49,6 +49,13 @@ const GROUPS: Array<{ title: string; keys: Array<[string, string]> }> = [
     ],
   },
   {
+    title: "Habits",
+    keys: [
+      ["Space", "Tick today"],
+      ["N", "New habit"],
+    ],
+  },
+  {
     title: "Focus",
     keys: [
       ["Space", "Play / pause (in zen)"],

@@ -4,6 +4,7 @@ import {
   durationMinutes,
   placeBlock,
 } from "../domain/schedule";
+import { ruleColumns } from "../domain/recurrence";
 import { newId } from "../ids";
 import type { DayKey } from "../time/tz";
 import {
@@ -343,6 +344,109 @@ export async function resizeTimeBlock(
 
   return patch(db, ctx, "time_block", id, {
     ends_at: new Date(startMs + length * 60_000).toISOString(),
+  });
+}
+
+/**
+ * Create a habit (§3.4).
+ *
+ * The rule columns come from `ruleColumns`, which nulls every field not belonging to the chosen
+ * kind. That is not tidiness: `habit_params_match_kind` rejects a row carrying leftovers from a
+ * previous kind, so a habit switched from INTERVAL to DAILY has to clear `interval_days` or the
+ * write succeeds locally and fails at the server minutes later.
+ */
+export async function createHabit(
+  db: RainflowDB,
+  ctx: WriteContext,
+  input: {
+    title: string;
+    kind: WireTables["habit"]["kind"];
+    description?: string | null;
+    intervalDays?: number;
+    weekdays?: number[];
+    monthDay?: number;
+    targetPerPeriod?: number;
+    color?: string;
+    id?: string;
+  },
+): Promise<WireTables["habit"]> {
+  return put(db, ctx, "habit", {
+    id: input.id ?? newId(),
+    title: input.title,
+    description: input.description ?? null,
+    ...ruleColumns(input.kind, {
+      intervalDays: input.intervalDays,
+      weekdays: input.weekdays,
+      monthDay: input.monthDay,
+    }),
+    target_per_period: Math.max(1, Math.round(input.targetPerPeriod ?? 1)),
+    color: input.color ?? "#34d399", // §4.1 Emerald / success
+    archived_at: null,
+  });
+}
+
+/** Change a habit's schedule, clearing the parameters of the kind it is leaving. */
+export async function setHabitRule(
+  db: RainflowDB,
+  ctx: WriteContext,
+  id: string,
+  kind: WireTables["habit"]["kind"],
+  params: { intervalDays?: number; weekdays?: number[]; monthDay?: number } = {},
+): Promise<WireTables["habit"] | undefined> {
+  return patch(db, ctx, "habit", id, ruleColumns(kind, params));
+}
+
+/**
+ * Tick or untick a habit for a given day.
+ *
+ * `log_date` is a `DayKey` in `APP_TIMEZONE`, not a UTC slice of a timestamp — §6 stored only a
+ * `completedAt DateTime`, which made "did I do this today?" depend on the reader's timezone and
+ * permitted logging the same habit twice in one day.
+ *
+ * Unticking SOFT-deletes the log rather than removing it. A hard delete would vanish from this
+ * device while other devices kept it, with nothing on the wire to say otherwise. It also means
+ * re-ticking has to revive the existing row: `unique(habit_id, log_date)` covers tombstones too,
+ * so inserting a second row for the same day would be rejected by the server.
+ */
+export async function setHabitLogged(
+  db: RainflowDB,
+  ctx: WriteContext,
+  habitId: string,
+  day: DayKey,
+  logged: boolean,
+): Promise<void> {
+  const existing = (await db.habit_log.where("habit_id").equals(habitId).toArray()).find(
+    (l) => l.log_date === day,
+  );
+
+  if (existing) {
+    // Revive or tombstone the row that already owns this (habit, day) pair.
+    await patch(db, ctx, "habit_log", existing.id, {
+      deleted_at: logged ? null : ctx.now().toISOString(),
+      completed_at: logged ? ctx.now().toISOString() : existing.completed_at,
+    });
+    return;
+  }
+
+  if (!logged) return;
+
+  await put(db, ctx, "habit_log", {
+    id: newId(),
+    habit_id: habitId,
+    log_date: day,
+    completed_at: ctx.now().toISOString(),
+  });
+}
+
+/** Stop tracking without destroying the streak history behind it (§3.4). */
+export async function setHabitArchived(
+  db: RainflowDB,
+  ctx: WriteContext,
+  id: string,
+  archived: boolean,
+): Promise<WireTables["habit"] | undefined> {
+  return patch(db, ctx, "habit", id, {
+    archived_at: archived ? ctx.now().toISOString() : null,
   });
 }
 

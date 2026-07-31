@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { pendingCount } from "../../db/outbox";
 import {
   closeFocusSession,
+  createHabit,
   createTask,
   createWriteContext,
   moveTimeBlock,
@@ -12,6 +13,9 @@ import {
   patch,
   put,
   scheduleTask,
+  setHabitArchived,
+  setHabitLogged,
+  setHabitRule,
   setSessionEnergy,
   softDelete,
 } from "../../db/repo";
@@ -853,6 +857,149 @@ describe("focus_session as a third synced table", () => {
       was_completed: true,
       actual_secs: 1500,
     });
+  });
+});
+
+describe("habits and their logs", () => {
+  it("round-trips a habit and a tick", async () => {
+    const server = new FakeServer();
+    const a = peer(server, "laptop");
+    const b = peer(server, "phone");
+
+    await createHabit(a.db, a.ctx, {
+      title: "Read 30 mins",
+      kind: "WEEKDAYS",
+      weekdays: [1, 2, 3, 4, 5],
+      id: "h1",
+    });
+    a.tick();
+    await setHabitLogged(a.db, a.ctx, "h1", "2026-08-10", true);
+    await drainUntilQuiet(a.db, a.transport);
+
+    server.tick();
+    await pullAll(b.db, b.transport);
+
+    expect(await b.db.habit.get("h1")).toMatchObject({
+      title: "Read 30 mins",
+      kind: "WEEKDAYS",
+      weekdays: [1, 2, 3, 4, 5],
+      // The kind's own parameters only; leftovers would fail habit_params_match_kind.
+      interval_days: null,
+      month_day: null,
+    });
+
+    const logs = await b.db.habit_log.where("habit_id").equals("h1").toArray();
+    expect(logs).toHaveLength(1);
+    expect(logs[0]).toMatchObject({ log_date: "2026-08-10", deleted_at: null });
+  });
+
+  it("revives the same row when a day is unticked and ticked again", async () => {
+    const server = new FakeServer();
+    const a = peer(server, "laptop");
+
+    await createHabit(a.db, a.ctx, { title: "Gym", kind: "DAILY", id: "h1" });
+    await setHabitLogged(a.db, a.ctx, "h1", "2026-08-10", true);
+    a.tick();
+    await setHabitLogged(a.db, a.ctx, "h1", "2026-08-10", false);
+    a.tick();
+    await setHabitLogged(a.db, a.ctx, "h1", "2026-08-10", true);
+    await drainUntilQuiet(a.db, a.transport);
+
+    /*
+     * `unique(habit_id, log_date)` covers tombstones too, so inserting a SECOND row for the same
+     * day would be rejected by the server — and would look fine locally right up until the drain
+     * started failing. Re-ticking has to revive the row that already owns the pair.
+     */
+    const rows = await a.db.habit_log.where("habit_id").equals("h1").toArray();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.deleted_at).toBeNull();
+    expect(server.rows("habit_log")).toHaveLength(1);
+  });
+
+  it("propagates an untick as a tombstone", async () => {
+    const server = new FakeServer();
+    const a = peer(server, "laptop");
+    const b = peer(server, "phone");
+
+    await createHabit(a.db, a.ctx, { title: "Gym", kind: "DAILY", id: "h1" });
+    await setHabitLogged(a.db, a.ctx, "h1", "2026-08-10", true);
+    await drainUntilQuiet(a.db, a.transport);
+    server.tick();
+    await pullAll(b.db, b.transport);
+    expect((await b.db.habit_log.toArray())[0]!.deleted_at).toBeNull();
+
+    a.tick();
+    await setHabitLogged(a.db, a.ctx, "h1", "2026-08-10", false);
+    await drainUntilQuiet(a.db, a.transport);
+    server.tick();
+    await pullAll(b.db, b.transport);
+
+    // Untick must travel. A hard delete would simply vanish here and the phone would go on
+    // counting the day toward the streak for ever.
+    expect((await b.db.habit_log.toArray())[0]!.deleted_at).not.toBeNull();
+  });
+
+  it("does not create a row for unticking a day that was never ticked", async () => {
+    const server = new FakeServer();
+    const a = peer(server, "laptop");
+
+    await createHabit(a.db, a.ctx, { title: "Gym", kind: "DAILY", id: "h1" });
+    await setHabitLogged(a.db, a.ctx, "h1", "2026-08-10", false);
+
+    expect(await a.db.habit_log.count()).toBe(0);
+  });
+
+  it("clears the previous kind's parameters when the rule changes", async () => {
+    const server = new FakeServer();
+    const a = peer(server, "laptop");
+
+    await createHabit(a.db, a.ctx, {
+      title: "Water plants",
+      kind: "INTERVAL",
+      intervalDays: 3,
+      id: "h1",
+    });
+    a.tick();
+    await setHabitRule(a.db, a.ctx, "h1", "MONTHLY_NTH", { monthDay: 15 });
+    await drainUntilQuiet(a.db, a.transport);
+
+    // A partial patch would leave interval_days set, and habit_params_match_kind would reject
+    // the row at the server — long after the change appeared to succeed locally.
+    expect(server.get("habit", "h1")).toMatchObject({
+      kind: "MONTHLY_NTH",
+      month_day: 15,
+      interval_days: null,
+      weekdays: null,
+    });
+  });
+
+  it("deletes a habit's logs with it", async () => {
+    const server = new FakeServer();
+    const a = peer(server, "laptop");
+
+    await createHabit(a.db, a.ctx, { title: "Gym", kind: "DAILY", id: "h1" });
+    await setHabitLogged(a.db, a.ctx, "h1", "2026-08-10", true);
+    a.tick();
+    await softDelete(a.db, a.ctx, "habit", "h1");
+
+    // Same cascade rule as time_block: the SQL `on delete cascade` never fires for a soft delete.
+    const logs = await a.db.habit_log.where("habit_id").equals("h1").toArray();
+    expect(logs.every((l) => l.deleted_at !== null)).toBe(true);
+  });
+
+  it("archiving keeps the logs", async () => {
+    const server = new FakeServer();
+    const a = peer(server, "laptop");
+
+    await createHabit(a.db, a.ctx, { title: "Gym", kind: "DAILY", id: "h1" });
+    await setHabitLogged(a.db, a.ctx, "h1", "2026-08-10", true);
+    a.tick();
+    await setHabitArchived(a.db, a.ctx, "h1", true);
+
+    // §3.4: stop tracking without destroying the streak history behind it. Archiving is not
+    // deleting, and must not take the logs with it.
+    expect((await a.db.habit.get("h1"))!.archived_at).not.toBeNull();
+    expect((await a.db.habit_log.toArray()).every((l) => l.deleted_at === null)).toBe(true);
   });
 });
 

@@ -82,6 +82,7 @@ export {
 
 export {
   closeFocusSession,
+  createHabit,
   createTask,
   createTaskFromCapture,
   createWriteContext,
@@ -91,6 +92,9 @@ export {
   put,
   resizeTimeBlock,
   scheduleTask,
+  setHabitArchived,
+  setHabitLogged,
+  setHabitRule,
   setSessionEnergy,
   setTaskCompleted,
   softDelete,
@@ -171,3 +175,17 @@ export {
   upcomingPhase,
 } from "./domain/pomodoro";
 export type { PomodoroConfig, PomodoroState } from "./domain/pomodoro";
+
+export {
+  completedDaysOf,
+  describeRule,
+  dueDays,
+  isDueOn,
+  monthOf,
+  nextDueOn,
+  ruleColumns,
+} from "./domain/recurrence";
+export type { CompletedDays, RecurrenceRule } from "./domain/recurrence";
+
+export { heatmap, summarise } from "./domain/streaks";
+export type { HeatCell, StreakSummary } from "./domain/streaks";

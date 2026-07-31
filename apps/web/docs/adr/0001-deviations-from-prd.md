@@ -147,6 +147,45 @@ The prompt is dismissible and never blocks. A prompt you must clear before start
 prompt you learn to click through at random, and junk data is worse than none. Skipped and abandoned
 phases are not asked about at all.
 
+### `INTERVAL` is anchored on the last completion, not a fixed grid
+
+"Every 3 days" is meaningless without a starting point, and `habit` has no creation or start date —
+§6 never gave it one. Two ways to resolve that: add a `starts_on` column and lay a fixed calendar
+grid from it, or anchor on the most recent completion. **The last completion wins**, and not only
+because it avoids a migration.
+
+A fixed grid means missing one occurrence leaves you permanently out of step with your own habit:
+water the plants a day late and every future due date is still on the original grid, so you are late
+for ever. Anchoring on the last completion is what "every three days" actually means. It also makes
+an overdue habit **stay** due instead of skipping to the next grid slot, which is what keeps a
+streak honest.
+
+The cost is that `INTERVAL` is not a pure function of the day alone — it needs the completion
+history — so every function in `domain/recurrence.ts` takes the completed-day set, and the kinds
+that do not need it ignore it. A habit never completed is due immediately: it is waiting on you, not
+"not yet scheduled".
+
+### A habit's history begins at its first completion
+
+Same missing-creation-date problem, different symptom. A streak window that simply ran back N days
+would count every day before the habit existed as a miss — **a habit created this morning would open
+with 729 misses and a 0.9% completion rate.** False, and the most discouraging thing a habit tracker
+could say to someone on day one. So the window starts at the first completion, and a habit never
+completed has no history at all.
+
+Two more rules in `domain/streaks.ts`, both easy to get wrong in ways that punish the user:
+
+- **Only a due day can break a streak.** A weekdays habit must not lose its streak over the weekend
+  and a monthly one must not lose it on the 2nd. Counting calendar days instead of scheduled days
+  makes every non-daily habit impossible to keep.
+- **Today is not yet a miss.** The day is not over. A streak that resets at midnight is wrong for
+  most of every day and reads as a punishment for not having done the thing yet. Today is excluded
+  from the completion-rate denominator too, or the number would be at its worst at breakfast.
+
+The heatmap distinguishes **three** states, not GitHub's two: done, missed, and *not scheduled*. A
+completions-only grid makes a weekdays habit look like it fails every weekend, and gives no way to
+tell a day off from a day dropped — which is the most useful thing the picture can say.
+
 ## Scope reductions
 
 - **§3.5 reduced** to markdown rendering with syntax-highlighted code fences on `task.description`.

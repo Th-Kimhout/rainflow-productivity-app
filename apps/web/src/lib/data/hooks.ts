@@ -2,17 +2,21 @@
 
 import {
   type DayKey,
+  type HabitRow,
   type PositionedBlock,
   type Quadrant,
+  type StreakSummary,
   type TaskRow,
   type TaskStatus,
   type TimeBlockRow,
+  completedDaysOf,
   dayRange,
   displayPriority,
   layoutDay,
   previousDay,
   quadrantOf,
   scheduledMinutes,
+  summarise,
   todayKey,
 } from "@rainflow/data";
 import { useLiveQuery } from "dexie-react-hooks";
@@ -218,6 +222,49 @@ export function useSchedulableTasks(day: DayKey): TaskRow[] | undefined {
       return byListOrder(a, b);
     });
   }, [db, day]);
+}
+
+/** A habit with its completion history and derived §3.4 numbers. */
+export interface HabitSummary {
+  habit: HabitRow;
+  completed: Set<DayKey>;
+  streak: StreakSummary;
+}
+
+/**
+ * Every live habit with its streak, sorted so what needs doing today floats up (§3.4).
+ *
+ * The logs are read ONCE for all habits rather than per habit. A `useLiveQuery` per row would
+ * re-run every one of them on any habit_log write — tick one box and every habit on the page
+ * recomputes — and would make the number of IndexedDB round trips grow with the list.
+ */
+export function useHabits(
+  day: DayKey = todayKey(),
+  includeArchived = false,
+): HabitSummary[] | undefined {
+  const { db } = useData();
+
+  return useLiveQuery(async () => {
+    const habits = live(await db.habit.toArray()).filter(
+      (h) => includeArchived || h.archived_at === null,
+    );
+    const logs = live(await db.habit_log.toArray());
+
+    return habits
+      .map((habit) => {
+        const completed = completedDaysOf(logs, habit.id);
+        return { habit, completed, streak: summarise(habit, completed, day) };
+      })
+      .sort((a, b) => {
+        // Due and unticked first — the list is a checklist before it is a record.
+        const aTodo = a.streak.dueToday ? 0 : 1;
+        const bTodo = b.streak.dueToday ? 0 : 1;
+        if (aTodo !== bTodo) return aTodo - bTodo;
+        // Then longest streak, because that is what there is most to lose.
+        if (a.streak.current !== b.streak.current) return b.streak.current - a.streak.current;
+        return a.habit.title.localeCompare(b.habit.title);
+      });
+  }, [db, day, includeArchived]);
 }
 
 /**
