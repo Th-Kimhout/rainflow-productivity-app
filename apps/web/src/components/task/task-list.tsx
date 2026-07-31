@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { Kbd } from "@/components/common/kbd";
 import { useWriteContext } from "@/lib/data/provider";
+import { start as startFocus } from "@/lib/focus/store";
 import { PRIORITY, useKeyHandler } from "@/lib/keyboard/provider";
 import { useUrlState } from "@/lib/url-state";
 import { cn } from "@/lib/utils";
@@ -25,16 +26,19 @@ export function TaskList({
   emptyMessage: string;
 }) {
   const { db, ctx } = useWriteContext();
-  const { taskId: openTaskId, openTask } = useUrlState();
-  const [selected, setSelected] = useState(0);
+  const { taskId: openTaskId, openTask, openZen } = useUrlState();
+  const [rawSelected, setSelected] = useState(0);
   const containerRef = useRef<HTMLUListElement>(null);
 
   const count = tasks?.length ?? 0;
 
-  // Keep the cursor in range as the list changes under it.
-  useEffect(() => {
-    setSelected((s) => (count === 0 ? 0 : Math.min(s, count - 1)));
-  }, [count]);
+  /*
+   * The cursor is CLAMPED ON READ rather than corrected in an effect. Completing the last item
+   * shortens the list under the selection, and an effect that writes the corrected value back
+   * renders once with the stale index before fixing it — a visible flicker, and a frame in
+   * which `tasks[selected]` is undefined.
+   */
+  const selected = count === 0 ? 0 : Math.min(rawSelected, count - 1);
 
   useKeyHandler(PRIORITY.view, (event) => {
     if (!tasks || tasks.length === 0) return false;
@@ -62,6 +66,15 @@ export function TaskList({
       if (!task) return false;
       event.preventDefault();
       openTask(task.id);
+      return true;
+    }
+    if (key === "f") {
+      // §3.3: start a focus session on the selected task and drop straight into zen mode.
+      const task = tasks[selected];
+      if (!task) return false;
+      event.preventDefault();
+      void startFocus(task.id);
+      openZen(task.id);
       return true;
     }
     return false;

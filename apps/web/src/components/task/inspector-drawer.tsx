@@ -13,11 +13,12 @@ import {
   quadrantOf,
   softDelete,
 } from "@rainflow/data";
-import { AlertTriangle, Star, Trash2, X } from "lucide-react";
+import { AlertTriangle, Play, Star, Trash2, X } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import { SubtaskTree } from "@/components/task/subtask-tree";
+import { start as startFocus } from "@/lib/focus/store";
 import { useTask, useTaskBlocks } from "@/lib/data/hooks";
 import { useWriteContext } from "@/lib/data/provider";
 import { PRIORITY, isEditable, useKeyHandler } from "@/lib/keyboard/provider";
@@ -96,39 +97,46 @@ const STATUSES: TaskStatus[] = ["INBOX", "BACKLOG", "TODAY", "IN_PROGRESS", "COM
 
 function InspectorBody({ task, onClose }: { task: TaskRow; onClose: () => void }) {
   const { db, ctx } = useWriteContext();
+  const { openZen } = useUrlState();
 
   /*
-   * Title and description are local state, committed on blur rather than per keystroke.
+   * Title and description are committed on blur rather than per keystroke.
    *
    * Not a performance concern — the write is local and coalesced in the outbox anyway. It is
    * about Rule 1 in apply-remote.ts: a row with a pending op refuses remote updates, so writing
    * on every keystroke would keep the row permanently pending and block legitimate incoming
    * changes for as long as the field has focus.
+   *
+   * THE DRAFT IS NULL UNTIL SOMETHING IS TYPED, and the displayed value falls back to the task.
+   * The obvious shape — mirror the task into state, re-seed it from an effect — has a real bug
+   * in it: the effect fires on every remote edit, so a change syncing in from another device
+   * wipes whatever is half-typed here. Falling back only when there is no draft means the row
+   * stays live until the moment the user starts editing, and their text wins after that.
    */
-  const [title, setTitle] = useState(task.title);
-  const [description, setDescription] = useState(task.description ?? "");
+  const [draft, setDraft] = useState<{ id: string; title: string; description: string } | null>(
+    null,
+  );
+  const editing = draft !== null && draft.id === task.id;
+  const title = editing ? draft.title : task.title;
+  const description = editing ? draft.description : (task.description ?? "");
 
-  // Re-seed when the drawer switches tasks, or when a remote edit lands on this one.
-  useEffect(() => {
-    setTitle(task.title);
-    setDescription(task.description ?? "");
-  }, [task.id, task.title, task.description]);
+  function edit(changes: { title?: string; description?: string }) {
+    setDraft({ id: task.id, title, description, ...changes });
+  }
 
   const quadrant = quadrantOf(task);
 
   function commitTitle() {
     const next = title.trim();
     // An empty title would leave an unnameable row, and the DB rejects it anyway
-    // (task_title_not_blank). Revert rather than fight the constraint.
-    if (!next) {
-      setTitle(task.title);
-      return;
-    }
-    if (next !== task.title) void patch(db, ctx, "task", task.id, { title: next });
+    // (task_title_not_blank). Dropping the draft reverts to the stored value.
+    setDraft(null);
+    if (next && next !== task.title) void patch(db, ctx, "task", task.id, { title: next });
   }
 
   function commitDescription() {
     const next = description.trim() || null;
+    setDraft(null);
     if (next !== task.description) void patch(db, ctx, "task", task.id, { description: next });
   }
 
@@ -141,7 +149,7 @@ function InspectorBody({ task, onClose }: { task: TaskRow; onClose: () => void }
           </p>
           <textarea
             value={title}
-            onChange={(e) => setTitle(e.target.value)}
+            onChange={(e) => edit({ title: e.target.value })}
             onBlur={commitTitle}
             rows={2}
             aria-label="Task title"
@@ -253,7 +261,7 @@ function InspectorBody({ task, onClose }: { task: TaskRow; onClose: () => void }
           </h3>
           <textarea
             value={description}
-            onChange={(e) => setDescription(e.target.value)}
+            onChange={(e) => edit({ description: e.target.value })}
             onBlur={commitDescription}
             rows={5}
             placeholder="Markdown rendering arrives in Phase 7."
@@ -272,7 +280,21 @@ function InspectorBody({ task, onClose }: { task: TaskRow; onClose: () => void }
         <SubtaskTree parent={task} />
       </div>
 
-      <footer className="border-t border-border p-4">
+      <footer className="flex items-center justify-between gap-2 border-t border-border p-4">
+        <button
+          type="button"
+          onClick={() => {
+            // Start the timer AND open zen in one gesture — §3.3's whole proposition is that
+            // beginning focused work should not be a three-step errand.
+            void startFocus(task.id);
+            openZen(task.id);
+          }}
+          className="flex items-center gap-1.5 rounded-md bg-rain px-2.5 py-1.5 text-xs font-medium text-background transition-colors hover:bg-rain/90"
+        >
+          <Play className="size-3" />
+          Focus
+        </button>
+
         <button
           type="button"
           onClick={() => {

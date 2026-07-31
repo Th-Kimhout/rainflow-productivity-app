@@ -64,6 +64,10 @@ export function useUrlState() {
     day,
     openTask: useCallback((id: string) => set("task", id), [set]),
     closeTask: useCallback(() => set("task", null), [set]),
+    // Zen mode is in the URL like everything else, so it survives a reload — walking back into
+    // a session you left should not mean re-entering it (§3.3).
+    openZen: useCallback((id: string) => set("zen", id), [set]),
+    closeZen: useCallback(() => set("zen", null), [set]),
     setDay: useCallback(
       // Today is the default, so it is dropped rather than written — and a bookmarked
       // `/calendar` then always means "today" rather than the day it was bookmarked on.

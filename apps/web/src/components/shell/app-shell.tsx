@@ -2,11 +2,14 @@
 
 import { type ReactNode, Suspense } from "react";
 
+import { EnergyPrompt } from "@/components/focus/energy-prompt";
+import { ZenMode } from "@/components/focus/zen-mode";
 import { CommandPalette } from "@/components/palette/command-palette";
 import { ShortcutHelp } from "@/components/shell/shortcut-help";
 import { Sidebar } from "@/components/shell/sidebar";
 import { StatusBar } from "@/components/shell/status-bar";
 import { InspectorDrawer } from "@/components/task/inspector-drawer";
+import { FocusProvider } from "@/lib/focus/provider";
 import { KeyboardProvider, useChordHint } from "@/lib/keyboard/provider";
 
 /**
@@ -26,17 +29,28 @@ export function AppShell({ children }: { children: ReactNode }) {
        * `next build` fails outright. Everything reading `?task=` / `?view=` sits below this one —
        * that includes page content, since a list row opening the inspector needs the same state.
        */}
+      {/*
+        `FocusProvider` is INSIDE the Suspense boundary but OUTSIDE the panes, because it drives
+        the module-scoped pomodoro store and must stay mounted across every navigation. A phase
+        that only completes while the page showing the timer is mounted is exactly the bug the
+        module-scoped store exists to prevent.
+      */}
       <Suspense fallback={<ShellFallback />}>
-        <div className="flex flex-1 overflow-hidden">
-          <Sidebar />
+        <FocusProvider>
+          <div className="flex flex-1 overflow-hidden">
+            <Sidebar />
 
-          <div className="flex min-w-0 flex-1 flex-col">
-            <main className="flex-1 overflow-y-auto">{children}</main>
-            <StatusBar />
+            <div className="flex min-w-0 flex-1 flex-col">
+              <main className="flex-1 overflow-y-auto">{children}</main>
+              <StatusBar />
+            </div>
+
+            <InspectorDrawer />
           </div>
 
-          <InspectorDrawer />
-        </div>
+          <ZenMode />
+          <EnergyPrompt />
+        </FocusProvider>
       </Suspense>
 
       <CommandPalette />

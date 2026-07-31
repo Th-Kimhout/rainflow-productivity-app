@@ -8,11 +8,12 @@ import {
   setQuadrant,
   setTaskCompleted,
 } from "@rainflow/data";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import { Kbd } from "@/components/common/kbd";
 import { useMatrixTasks } from "@/lib/data/hooks";
 import { useWriteContext } from "@/lib/data/provider";
+import { start as startFocus } from "@/lib/focus/store";
 import { PRIORITY, useKeyHandler } from "@/lib/keyboard/provider";
 import { useUrlState } from "@/lib/url-state";
 import { cn } from "@/lib/utils";
@@ -64,7 +65,7 @@ const KEY_TO_QUADRANT: Record<string, Quadrant> = {
 export function MatrixView() {
   const { db, ctx } = useWriteContext();
   const groups = useMatrixTasks();
-  const { taskId: openTaskId, openTask } = useUrlState();
+  const { taskId: openTaskId, openTask, openZen } = useUrlState();
 
   const [dragging, setDragging] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState<Quadrant | null>(null);
@@ -78,11 +79,14 @@ export function MatrixView() {
   const flat: TaskRow[] = groups
     ? LAYOUT.flatMap(({ quadrant }) => groups[quadrant])
     : [];
-  const [selected, setSelected] = useState(0);
+  const [rawSelected, setSelected] = useState(0);
 
-  useEffect(() => {
-    setSelected((s) => (flat.length === 0 ? 0 : Math.min(s, flat.length - 1)));
-  }, [flat.length]);
+  /*
+   * Clamped on READ rather than corrected in an effect. Completing a task removes it from the
+   * board under the cursor; an effect that writes the corrected index back renders once with
+   * the stale one first, so `flat[selected]` is briefly undefined and `1`–`4` do nothing.
+   */
+  const selected = flat.length === 0 ? 0 : Math.min(rawSelected, flat.length - 1);
 
   function move(task: TaskRow, quadrant: Quadrant) {
     // Two booleans, and the grid follows. No quadrant column to update.
@@ -117,6 +121,13 @@ export function MatrixView() {
     if (event.key === "Enter" && current) {
       event.preventDefault();
       openTask(current.id);
+      return true;
+    }
+    if (key === "f" && current) {
+      // §3.3: triage straight into doing the work, without a detour through another view.
+      event.preventDefault();
+      void startFocus(current.id);
+      openZen(current.id);
       return true;
     }
     return false;

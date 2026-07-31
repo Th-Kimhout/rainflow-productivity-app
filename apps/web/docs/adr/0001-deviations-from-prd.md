@@ -115,6 +115,38 @@ The fix is `CASCADE_CHILDREN` in `wire.ts`, a declarative mirror of the SQL rela
 orphans on delete.** The tests in `sync.test.ts` under "soft delete cascades to dependent rows"
 fail if the walk is removed.
 
+### The pomodoro measures time, it does not count it
+
+§3.3's timer is derived from timestamps (`runningSince`, `accumulatedMs`) and recomputed on every
+render. It never decrements a counter on a `setInterval`, which is the obvious implementation and
+is wrong in three independent ways:
+
+- Browsers throttle background-tab timers to once a second at best, and Chrome drops hidden tabs to
+  **once a minute** after a few minutes. A counting timer left in the background finishes a
+  "25 minute" phase well over an hour later.
+- A sleeping laptop fires no timers at all.
+- Every dropped tick is permanent — the error accumulates with nothing to correct against.
+
+The interval in `lib/clock.ts` exists **only to trigger repaints**. If it fires late, or not at all,
+the next render is still correct. Three consequences fall out for free: the module is testable by
+passing `now` in, a phase that expired while the tab was hidden completes on the first render after
+waking, and two tabs agree without exchanging a single message — they are reading the same
+timestamps rather than running two clocks.
+
+`actual_secs` is the sum of the *running* segments, never `ended_at - started_at`. Paused time sits
+between those two, and counting it would inflate every §3.6 figure.
+
+### Energy is asked at the end of a focus phase, not in an analytics screen
+
+§3.6 wants energy correlated with time of day, which only works if the answer is about the session
+that just happened. Asked the next morning it is a guess, systematically biased by how the rest of
+the day went. This is also why the ADR moved `energyRating` off `Task` and onto `focus_session` — a
+task worked on across four sittings has four energies, not one.
+
+The prompt is dismissible and never blocks. A prompt you must clear before starting a break is a
+prompt you learn to click through at random, and junk data is worse than none. Skipped and abandoned
+phases are not asked about at all.
+
 ## Scope reductions
 
 - **§3.5 reduced** to markdown rendering with syntax-highlighted code fences on `task.description`.

@@ -81,14 +81,17 @@ export {
 } from "./db/outbox";
 
 export {
+  closeFocusSession,
   createTask,
   createTaskFromCapture,
   createWriteContext,
   moveTimeBlock,
+  openFocusSession,
   patch,
   put,
   resizeTimeBlock,
   scheduleTask,
+  setSessionEnergy,
   setTaskCompleted,
   softDelete,
 } from "./db/repo";
@@ -143,3 +146,28 @@ export {
   spansOverlap,
 } from "./domain/schedule";
 export type { DaySpan, PositionedBlock } from "./domain/schedule";
+
+export {
+  DEFAULT_CONFIG,
+  PHASE_LABELS,
+  abandon,
+  beginPhase,
+  completePhase,
+  elapsedMs,
+  formatDuration,
+  idleState,
+  isActive,
+  isExpired,
+  isRunning,
+  nextPhaseOf,
+  pause,
+  phaseDurationMs,
+  progress,
+  remainingMs,
+  reset,
+  resume,
+  setTask,
+  tabTitle,
+  upcomingPhase,
+} from "./domain/pomodoro";
+export type { PomodoroConfig, PomodoroState } from "./domain/pomodoro";

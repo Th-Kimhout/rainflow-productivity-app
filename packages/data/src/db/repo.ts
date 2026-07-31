@@ -347,6 +347,72 @@ export async function resizeTimeBlock(
 }
 
 /**
+ * Open a `focus_session` row when a phase begins (§3.3).
+ *
+ * The row is written at the START, not at the end. §6 recorded only a duration and a completion
+ * time, which makes §3.6's "top focus hours" uncomputable — you cannot bucket a session by hour
+ * of day without knowing when it began. Writing it up front also means a session interrupted by
+ * a crashed tab still leaves evidence, rather than vanishing.
+ *
+ * Breaks get rows too. `phase` is what distinguishes them, and analytics filters on it — the
+ * alternative is having no idea whether the breaks were ever actually taken.
+ */
+export async function openFocusSession(
+  db: RainflowDB,
+  ctx: WriteContext,
+  input: {
+    id: string;
+    taskId: string | null;
+    phase: WireTables["focus_session"]["phase"];
+    plannedMins: number;
+    startedAt: string;
+  },
+): Promise<WireTables["focus_session"]> {
+  return put(db, ctx, "focus_session", {
+    id: input.id,
+    task_id: input.taskId,
+    started_at: input.startedAt,
+    ended_at: null,
+    planned_mins: Math.max(1, Math.round(input.plannedMins)),
+    actual_secs: 0,
+    was_completed: false,
+    phase: input.phase,
+    energy: null,
+    notes: null,
+  });
+}
+
+/**
+ * Close a session.
+ *
+ * `actualSecs` is the time genuinely spent working, which is NOT `ended_at - started_at` —
+ * paused time sits between the two and counting it would inflate every §3.6 number. The caller
+ * takes it from the pomodoro state's accumulated segments.
+ */
+export async function closeFocusSession(
+  db: RainflowDB,
+  ctx: WriteContext,
+  id: string,
+  input: { actualSecs: number; wasCompleted: boolean; endedAt?: string },
+): Promise<WireTables["focus_session"] | undefined> {
+  return patch(db, ctx, "focus_session", id, {
+    ended_at: input.endedAt ?? ctx.now().toISOString(),
+    actual_secs: Math.max(0, Math.round(input.actualSecs)),
+    was_completed: input.wasCompleted,
+  });
+}
+
+/** §3.6 energy logging. Separate from closing, because it is answered after the fact. */
+export async function setSessionEnergy(
+  db: RainflowDB,
+  ctx: WriteContext,
+  id: string,
+  energy: WireTables["focus_session"]["energy"],
+): Promise<WireTables["focus_session"] | undefined> {
+  return patch(db, ctx, "focus_session", id, { energy });
+}
+
+/**
  * Toggle completion.
  *
  * `status` and `completed_at` move together — §6 carried a third field (`isCompleted`) that

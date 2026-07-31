@@ -4,12 +4,15 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { pendingCount } from "../../db/outbox";
 import {
+  closeFocusSession,
   createTask,
   createWriteContext,
   moveTimeBlock,
+  openFocusSession,
   patch,
   put,
   scheduleTask,
+  setSessionEnergy,
   softDelete,
 } from "../../db/repo";
 import { RainflowDB } from "../../db/schema";
@@ -745,6 +748,111 @@ describe("time_block as a second synced table", () => {
 
     await drainUntilQuiet(a.db, a.transport);
     expect(server.get("time_block", "tb1")).toMatchObject({ starts_at: moved.starts_at });
+  });
+});
+
+describe("focus_session as a third synced table", () => {
+  it("round-trips an open session and its close", async () => {
+    const server = new FakeServer();
+    const a = peer(server, "laptop");
+    const b = peer(server, "phone");
+
+    await createTask(a.db, a.ctx, { title: "deep work", id: "t1" });
+    await openFocusSession(a.db, a.ctx, {
+      id: "f1",
+      taskId: "t1",
+      phase: "FOCUS",
+      plannedMins: 25,
+      startedAt: "2026-08-12T02:00:00.000Z",
+    });
+    await drainUntilQuiet(a.db, a.transport);
+
+    server.tick();
+    await pullAll(b.db, b.transport);
+    expect(await b.db.focus_session.get("f1")).toMatchObject({
+      task_id: "t1",
+      planned_mins: 25,
+      actual_secs: 0,
+      was_completed: false,
+    });
+
+    a.tick();
+    await closeFocusSession(a.db, a.ctx, "f1", { actualSecs: 1500, wasCompleted: true });
+    await drainUntilQuiet(a.db, a.transport);
+    server.tick();
+    await pullAll(b.db, b.transport);
+
+    expect(await b.db.focus_session.get("f1")).toMatchObject({
+      actual_secs: 1500,
+      was_completed: true,
+    });
+  });
+
+  it("carries a bare pomodoro with no task attached", async () => {
+    const server = new FakeServer();
+    const a = peer(server, "laptop");
+
+    // §3.3 allows focusing without picking a task. `task_id` is nullable for exactly this, and
+    // a null FK must survive the round trip rather than being dropped or coerced.
+    await openFocusSession(a.db, a.ctx, {
+      id: "f1",
+      taskId: null,
+      phase: "FOCUS",
+      plannedMins: 25,
+      startedAt: "2026-08-12T02:00:00.000Z",
+    });
+    await drainUntilQuiet(a.db, a.transport);
+
+    expect(server.get("focus_session", "f1")).toMatchObject({ task_id: null });
+  });
+
+  it("records break phases distinctly from focus", async () => {
+    const server = new FakeServer();
+    const a = peer(server, "laptop");
+
+    for (const [id, phase, mins] of [
+      ["f1", "FOCUS", 25],
+      ["f2", "SHORT_BREAK", 5],
+    ] as const) {
+      await openFocusSession(a.db, a.ctx, {
+        id,
+        taskId: null,
+        phase,
+        plannedMins: mins,
+        startedAt: "2026-08-12T02:00:00.000Z",
+      });
+      a.tick();
+    }
+    await drainUntilQuiet(a.db, a.transport);
+
+    // §3.6 filters on `phase`; without the distinction, break time would count as focus time.
+    expect(server.get("focus_session", "f1")).toMatchObject({ phase: "FOCUS" });
+    expect(server.get("focus_session", "f2")).toMatchObject({ phase: "SHORT_BREAK" });
+  });
+
+  it("keeps the energy rating separate from closing the session", async () => {
+    const server = new FakeServer();
+    const a = peer(server, "laptop");
+
+    await openFocusSession(a.db, a.ctx, {
+      id: "f1",
+      taskId: null,
+      phase: "FOCUS",
+      plannedMins: 25,
+      startedAt: "2026-08-12T02:00:00.000Z",
+    });
+    a.tick();
+    await closeFocusSession(a.db, a.ctx, "f1", { actualSecs: 1500, wasCompleted: true });
+    a.tick();
+    // Answered after the fact, and must not undo the close.
+    await setSessionEnergy(a.db, a.ctx, "f1", "HIGH");
+    await drainUntilQuiet(a.db, a.transport);
+
+    expect(server.get("focus_session", "f1")).toMatchObject({
+      energy: "HIGH",
+      was_completed: true,
+      actual_secs: 1500,
+    });
   });
 });
 

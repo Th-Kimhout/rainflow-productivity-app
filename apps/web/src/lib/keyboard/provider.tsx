@@ -225,7 +225,16 @@ export function useKeyHandler(
 ): void {
   const { register } = useKeyboard();
   const ref = useRef(handler);
-  ref.current = handler;
+
+  /*
+   * Refreshed in an effect rather than assigned during render. Writing a ref during render is
+   * unsafe under concurrent rendering — a render that React discards would still have mutated
+   * it — and there is no cost here, because effects run before the user can physically press a
+   * key after a repaint.
+   */
+  useEffect(() => {
+    ref.current = handler;
+  });
 
   const whenTyping = options?.whenTyping ?? false;
 

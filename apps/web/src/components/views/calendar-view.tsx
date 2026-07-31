@@ -16,9 +16,10 @@ import {
   todayKey,
 } from "@rainflow/data";
 import { ChevronLeft, ChevronRight, Trash2 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 
 import { Kbd } from "@/components/common/kbd";
+import { useClock } from "@/lib/clock";
 import { type ScheduledBlock, useDaySchedule, useSchedulableTasks } from "@/lib/data/hooks";
 import { useWriteContext } from "@/lib/data/provider";
 import { PRIORITY, useKeyHandler } from "@/lib/keyboard/provider";
@@ -324,13 +325,13 @@ function DropGuide({ minute }: { minute: number }) {
  * within half a pixel of correct at all times.
  */
 function NowLine({ day }: { day: string }) {
-  const [minute, setMinute] = useState(() => nowLineMinutes(day));
-
-  useEffect(() => {
-    setMinute(nowLineMinutes(day));
-    const id = setInterval(() => setMinute(nowLineMinutes(day)), 30_000);
-    return () => clearInterval(id);
-  }, [day]);
+  /*
+   * The shared clock rather than a local interval. `Date.now()` cannot be called during render
+   * — it is impure and would differ between server and client — and a `setState` in an effect
+   * paints the line in the wrong place for one frame before correcting it.
+   */
+  const now = useClock();
+  const minute = now === 0 ? null : nowLineMinutes(day, new Date(now));
 
   if (minute === null) return null;
 

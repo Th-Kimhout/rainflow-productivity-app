@@ -45,6 +45,15 @@ const GROUPS: Array<{ title: string; keys: Array<[string, string]> }> = [
       ["K / ↑", "Move up"],
       ["Space", "Toggle complete"],
       ["Enter", "Open inspector"],
+      ["F", "Focus on this task"],
+    ],
+  },
+  {
+    title: "Focus",
+    keys: [
+      ["Space", "Play / pause (in zen)"],
+      ["1 / 2 / 3", "Energy: high / medium / low"],
+      ["Esc", "Leave zen mode"],
     ],
   },
   {

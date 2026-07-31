@@ -2,6 +2,7 @@
 
 import { AlertTriangle, Check, CloudOff, RefreshCw } from "lucide-react";
 
+import { FocusTimer } from "@/components/focus/focus-timer";
 import { usePendingWrites } from "@/lib/data/hooks";
 import { useData } from "@/lib/data/provider";
 import { cn } from "@/lib/utils";
@@ -61,6 +62,9 @@ export function StatusBar() {
       </div>
 
       <div className="flex items-center gap-3">
+        {/* The §3.3 timer. Renders nothing when idle — see FocusTimer. */}
+        <FocusTimer />
+
         {status.lastError && status.phase === "error" ? (
           <span className="max-w-80 truncate text-muted-foreground" title={status.lastError}>
             {status.lastError}
