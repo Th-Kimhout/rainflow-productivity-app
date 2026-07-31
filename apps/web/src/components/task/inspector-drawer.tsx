@@ -17,6 +17,7 @@ import { AlertTriangle, Play, Star, Trash2, X } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 
+import { NotesEditor } from "@/components/task/notes-editor";
 import { SubtaskTree } from "@/components/task/subtask-tree";
 import { start as startFocus } from "@/lib/focus/store";
 import { useTask, useTaskBlocks } from "@/lib/data/hooks";
@@ -113,16 +114,8 @@ function InspectorBody({ task, onClose }: { task: TaskRow; onClose: () => void }
    * wipes whatever is half-typed here. Falling back only when there is no draft means the row
    * stays live until the moment the user starts editing, and their text wins after that.
    */
-  const [draft, setDraft] = useState<{ id: string; title: string; description: string } | null>(
-    null,
-  );
-  const editing = draft !== null && draft.id === task.id;
-  const title = editing ? draft.title : task.title;
-  const description = editing ? draft.description : (task.description ?? "");
-
-  function edit(changes: { title?: string; description?: string }) {
-    setDraft({ id: task.id, title, description, ...changes });
-  }
+  const [draft, setDraft] = useState<{ id: string; title: string } | null>(null);
+  const title = draft !== null && draft.id === task.id ? draft.title : task.title;
 
   const quadrant = quadrantOf(task);
 
@@ -134,12 +127,6 @@ function InspectorBody({ task, onClose }: { task: TaskRow; onClose: () => void }
     if (next && next !== task.title) void patch(db, ctx, "task", task.id, { title: next });
   }
 
-  function commitDescription() {
-    const next = description.trim() || null;
-    setDraft(null);
-    if (next !== task.description) void patch(db, ctx, "task", task.id, { description: next });
-  }
-
   return (
     <>
       <header className="flex items-start justify-between gap-2 border-b border-border p-4">
@@ -149,7 +136,7 @@ function InspectorBody({ task, onClose }: { task: TaskRow; onClose: () => void }
           </p>
           <textarea
             value={title}
-            onChange={(e) => edit({ title: e.target.value })}
+            onChange={(e) => setDraft({ id: task.id, title: e.target.value })}
             onBlur={commitTitle}
             rows={2}
             aria-label="Task title"
@@ -255,20 +242,7 @@ function InspectorBody({ task, onClose }: { task: TaskRow; onClose: () => void }
           </div>
         </section>
 
-        <section className="space-y-2">
-          <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-            Notes
-          </h3>
-          <textarea
-            value={description}
-            onChange={(e) => edit({ description: e.target.value })}
-            onBlur={commitDescription}
-            rows={5}
-            placeholder="Markdown rendering arrives in Phase 7."
-            aria-label="Notes"
-            className="w-full resize-y rounded-md border border-border bg-background p-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:ring-1 focus:ring-rain"
-          />
-        </section>
+        <NotesEditor task={task} />
 
         <section className="space-y-2">
           <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">

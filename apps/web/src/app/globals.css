@@ -192,3 +192,30 @@
     color: var(--background);
   }
 }
+
+/*
+ * Shiki dual-theme output (§3.5 code fences).
+ *
+ * `highlight()` emits BOTH themes as CSS variables — `--shiki-light` / `--shiki-dark` — rather
+ * than baking one in. Re-highlighting when the theme flips would mean a flash of unstyled code
+ * on every toggle, and would need the highlighter kept alive long after it was used. Two rules
+ * here cost nothing and switch instantly.
+ *
+ * `.dark` is the class next-themes sets, matching the palette blocks above.
+ */
+.shiki,
+.shiki span {
+  color: var(--shiki-light);
+  background-color: var(--shiki-light-bg);
+}
+
+.dark .shiki,
+.dark .shiki span {
+  color: var(--shiki-dark);
+  background-color: var(--shiki-dark-bg);
+}
+
+/* The block's own container already draws the border and radius; Shiki's <pre> just fills it. */
+.shiki {
+  overflow-x: auto;
+}

@@ -186,6 +186,40 @@ The heatmap distinguishes **three** states, not GitHub's two: done, missed, and 
 completions-only grid makes a weekdays habit look like it fails every weekend, and gives no way to
 tell a day off from a day dropped — which is the most useful thing the picture can say.
 
+### Shiki uses the JavaScript regex engine, not Oniguruma
+
+Oniguruma is Shiki's default and is faster on pathological grammars, but it is **WASM fetched at
+runtime**. RainFlow has no service worker (decision 3), so that fetch fails offline — and an
+already-loaded tab continuing to work is the entire point of the local-first design. Highlighting
+that silently stops on a train is worse than highlighting a few milliseconds slower. The JS engine
+is plain JavaScript and ships in the bundle.
+
+Two more constraints on the same dependency:
+
+- **`createHighlighterCore` with an explicit language list**, never the bundled `shiki` entry point,
+  which carries every grammar and theme Shiki knows and imports them eagerly. Six languages are
+  carried (`typescript`, `tsx`, `javascript`, `json`, `sql`, `bash`) plus aliases; anything else
+  renders as plain text rather than failing.
+- **Loaded on demand.** Measured after Phase 7: 680 KB of grammars across 7 chunks, **none of it on
+  a cold page load**. The cost lands on the first task containing a fence.
+
+Both themes are baked into the output as `--shiki-light` / `--shiki-dark` CSS variables, picked
+between in `globals.css`. Re-highlighting on theme change would flash unstyled code on every toggle.
+
+### No `rehype-raw`, and that is a security decision
+
+react-markdown escapes embedded HTML by default. That default is doing real work here: a
+`task.description` **arrives over the sync channel**, so it is not simply "the user's own trusted
+input". Adding raw-HTML support to get a `<details>` or a `<kbd>` would open script injection
+through a row, for formatting GFM already mostly covers. A test asserts it stays off.
+
+Shiki's output is the one place `dangerouslySetInnerHTML` is used. Safe: Shiki escapes the source it
+is given and emits only its own `<pre>`/`<span>` structure.
+
+GFM task-list checkboxes render **read-only**. Ticking one would have to rewrite the markdown source,
+and a checkbox that looks interactive and silently does nothing is worse than one that plainly is
+not. Subtasks (§3.2) are the real mechanism.
+
 ## Scope reductions
 
 - **§3.5 reduced** to markdown rendering with syntax-highlighted code fences on `task.description`.
