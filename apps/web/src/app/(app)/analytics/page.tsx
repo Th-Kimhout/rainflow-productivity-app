@@ -1,12 +1,8 @@
-import { NotBuiltYet } from "@/components/common/not-built-yet";
+"use client";
 
+import { AnalyticsView } from "@/components/analytics/analytics-view";
+
+/** §3.6 focus analytics and the weekly review digest, computed from Dexie on every view. */
 export default function AnalyticsPage() {
-  return (
-    <NotBuiltYet
-      section="PRD §3.6"
-      title="Analytics"
-      phase="Phase 8"
-      description="Planned vs actual time, focus hours, task velocity, habit consistency, and the weekly review digest — all computed locally from Dexie."
-    />
-  );
+  return <AnalyticsView />;
 }

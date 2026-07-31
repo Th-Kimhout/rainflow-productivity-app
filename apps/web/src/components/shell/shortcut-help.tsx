@@ -29,6 +29,7 @@ const GROUPS: Array<{ title: string; keys: Array<[string, string]> }> = [
       ["G C", "Calendar"],
       ["G H", "Habits"],
       ["G A", "Analytics"],
+      ["G S", "Settings"],
     ],
   },
   {

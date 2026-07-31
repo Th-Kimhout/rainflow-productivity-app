@@ -73,6 +73,15 @@ export { RainflowDB } from "./db/schema";
 export type { MetaRow, OutboxOp } from "./db/schema";
 
 export {
+  BACKUP_VERSION,
+  backupFilename,
+  exportBackup,
+  importBackup,
+  parseBackup,
+} from "./db/backup";
+export type { Backup, ImportReport } from "./db/backup";
+
+export {
   BASE_BACKOFF_MS,
   MAX_BACKOFF_MS,
   deadLettered,
@@ -189,3 +198,27 @@ export type { CompletedDays, RecurrenceRule } from "./domain/recurrence";
 
 export { heatmap, summarise } from "./domain/streaks";
 export type { HeatCell, StreakSummary } from "./domain/streaks";
+
+export {
+  energyByHour,
+  focusByDay,
+  focusByHour,
+  formatHour,
+  formatMinutes as formatFocusMinutes,
+  habitConsistency,
+  plannedVsActual,
+  topFocusHours,
+  velocity,
+  weeklyDigest,
+} from "./domain/analytics";
+export type {
+  DailyFocus,
+  DigestInput,
+  EnergyByHour,
+  HabitConsistency,
+  HourBucket,
+  PlannedVsActual,
+  TaskAccuracy,
+  Velocity,
+  WeeklyDigest,
+} from "./domain/analytics";

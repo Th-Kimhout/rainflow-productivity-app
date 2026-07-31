@@ -8,6 +8,7 @@ import {
   Inbox,
   LogOut,
   Repeat,
+  Settings,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -33,6 +34,7 @@ const NAV = [
   { href: "/calendar", label: "Calendar", icon: CalendarRange, chord: "G C" },
   { href: "/habits", label: "Habits", icon: Repeat, chord: "G H" },
   { href: "/analytics", label: "Analytics", icon: BarChart3, chord: "G A" },
+  { href: "/settings", label: "Settings", icon: Settings, chord: "G S" },
 ] as const;
 
 export function Sidebar() {

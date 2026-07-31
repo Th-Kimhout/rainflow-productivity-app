@@ -1,23 +1,32 @@
 "use client";
 
 import {
+  type DailyFocus,
   type DayKey,
+  type EnergyByHour,
   type HabitRow,
+  type HourBucket,
   type PositionedBlock,
   type Quadrant,
   type StreakSummary,
   type TaskRow,
   type TaskStatus,
   type TimeBlockRow,
+  type WeeklyDigest,
+  addDays,
   completedDaysOf,
   dayRange,
   displayPriority,
+  energyByHour,
+  focusByDay,
+  focusByHour,
   layoutDay,
   previousDay,
   quadrantOf,
   scheduledMinutes,
   summarise,
   todayKey,
+  weeklyDigest,
 } from "@rainflow/data";
 import { useLiveQuery } from "dexie-react-hooks";
 
@@ -222,6 +231,51 @@ export function useSchedulableTasks(day: DayKey): TaskRow[] | undefined {
       return byListOrder(a, b);
     });
   }, [db, day]);
+}
+
+/**
+ * Everything §3.6 needs, in ONE live query (ADR 0001: computed on view, never stored).
+ *
+ * One query rather than five, because five would each re-run on any write to any of the five
+ * tables — ticking a habit would recompute focus hours — and the analytics page would repaint
+ * five times for one change. A year of this user's history is a few thousand rows; reading them
+ * all and summing in JS takes microseconds.
+ */
+export function useDigest(day: DayKey = todayKey()): WeeklyDigest | undefined {
+  const { db } = useData();
+
+  return useLiveQuery(async () => {
+    const [tasks, blocks, sessions, habits, logs] = await Promise.all([
+      db.task.toArray(),
+      db.time_block.toArray(),
+      db.focus_session.toArray(),
+      db.habit.toArray(),
+      db.habit_log.toArray(),
+    ]);
+
+    // Tombstones are filtered inside the domain functions — they take raw rows on purpose, so
+    // a caller cannot forget.
+    return weeklyDigest({ tasks, blocks, sessions, habits, logs }, day);
+  }, [db, day]);
+}
+
+/** Focus minutes and energy bucketed by hour, over a trailing window (§3.6). */
+export function useFocusPatterns(
+  day: DayKey = todayKey(),
+  windowDays = 30,
+): { hours: HourBucket[]; energy: EnergyByHour[]; daily: DailyFocus[] } | undefined {
+  const { db } = useData();
+
+  return useLiveQuery(async () => {
+    const sessions = await db.focus_session.toArray();
+    const from = addDays(day, -(windowDays - 1));
+
+    return {
+      hours: focusByHour(sessions, from, day),
+      energy: energyByHour(sessions, from, day),
+      daily: focusByDay(sessions, from, day),
+    };
+  }, [db, day, windowDays]);
 }
 
 /** A habit with its completion history and derived §3.4 numbers. */

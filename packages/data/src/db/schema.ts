@@ -91,6 +91,29 @@ export class RainflowDB extends Dexie {
       outbox: "++seq, &key, table, next_attempt_at",
       meta: "key",
     });
+
+    /*
+     * ---------------------------------------------------------------------------------------
+     * ADDING A VERSION — read this before touching the block above.
+     *
+     * Dexie applies versions in order, so an EXISTING version's `.stores()` must never be
+     * edited. Changing version(1) does not migrate anyone already on it; it makes their
+     * database silently disagree with the schema, and the failure surfaces later as a query
+     * returning nothing rather than as an error.
+     *
+     *   this.version(2).stores({ task: "id, status, ..., new_index" });
+     *
+     * Only the tables that CHANGE need listing; the rest carry forward. A table set to `null`
+     * is dropped. An `.upgrade()` callback is only needed to transform existing rows — a new
+     * index is built by Dexie without one.
+     *
+     * WHAT MAKES THIS SAFE HERE: every row also exists on the server, and `resetCursors()`
+     * plus a pull re-hydrates the lot. So the worst case for a botched local migration is a
+     * re-download, NOT data loss — with one exception. A non-empty outbox holds writes that
+     * exist nowhere else, so a migration that touches `outbox` must preserve it, and the
+     * settings screen's JSON export is the backstop worth taking first.
+     * ---------------------------------------------------------------------------------------
+     */
   }
 }
 

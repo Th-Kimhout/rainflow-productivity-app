@@ -49,6 +49,7 @@ const CHORD_ROUTES = {
   c: "/calendar",
   h: "/habits",
   a: "/analytics",
+  s: "/settings",
 } as const;
 
 type ChordKey = keyof typeof CHORD_ROUTES;

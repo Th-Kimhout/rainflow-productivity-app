@@ -220,6 +220,47 @@ GFM task-list checkboxes render **read-only**. Ticking one would have to rewrite
 and a checkbox that looks interactive and silently does nothing is worse than one that plainly is
 not. Subtasks (§3.2) are the real mechanism.
 
+### The weekly digest is computed on view, not generated
+
+§3.6 calls the digest "automated", which reads like a cron job writing a summary row. At N=1 that
+would mean a scheduled Edge Function, a table to store results in, and a new class of bug: a digest
+that disagrees with the data it came from, with nothing to say which is right. A year of this user's
+history is a few thousand rows — summing them takes microseconds, cannot go stale, and works
+offline like everything else.
+
+Three rules the analytics functions enforce, each of which would otherwise produce a plausible
+wrong number:
+
+- **Only `FOCUS` sessions count as focus time.** Breaks are recorded too (that is what the `phase`
+  column is for), and counting them inflates every figure.
+- **`actual_secs`, never `ended_at - started_at`.** Paused time sits between those two; a session
+  interrupted by lunch would otherwise report three hours of focus.
+- **Habit consistency is the mean of each habit's own rate, not pooled completions over pooled due
+  days.** Pooling lets one daily habit outvote five weekly ones purely by having more occurrences,
+  so a perfect week on everything except the daily one would read as a bad week.
+
+An hour with no energy ratings reports `null`, not `0` — zero would plot as rock-bottom energy at
+3am for someone who has simply never worked at 3am, and the chart would advise against hours that
+were never tried.
+
+Charts are hand-written SVG. Recharts and similar are 100–300 KB for what is three bar charts with
+fixed axes, and each ships responsive-container machinery that fights the flex layout.
+
+### Board view: cut
+
+Listed in the plan as a candidate. Cut. §5.1's flow is capture → prioritise → timebox → execute →
+review, and List, Matrix and Calendar cover every step of it. A Kanban board is a fourth way to look
+at `status`, which the list already groups by and the matrix already re-ranks — new surface area,
+no new capability, and one more view to keep in step with every future schema change.
+
+### End-to-end tests: not installed
+
+The plan called for ~5 Playwright specs. Playwright downloads several hundred megabytes of browser
+binaries, which is not something to add to someone's machine unprompted — flagged for Rain rather
+than done. The convergence suite already drives the real sync engine against a fake server, which
+is where the genuinely hard bugs live; what Playwright would add is coverage of the wiring between
+components, which is currently checked by hand.
+
 ## Scope reductions
 
 - **§3.5 reduced** to markdown rendering with syntax-highlighted code fences on `task.description`.
