@@ -5,17 +5,16 @@ Project ref: `twxkbcxudvrwqkkaecks` · Postgres 17.6 · `ap-southeast-1` (Singap
 Migrations are plain SQL. There is no Prisma — see
 [`../apps/web/docs/adr/0001-deviations-from-prd.md`](../apps/web/docs/adr/0001-deviations-from-prd.md).
 
-## Status
+All eight migrations are applied and the owner is claimed — the app syncs against this project.
+Rather than a status table that goes stale, here is how to confirm it in one query:
 
-| | |
-|---|---|
-| Migrations 0001–0007 | ✅ applied |
-| 8 tables live | ✅ `task` `tag` `task_tag` `time_block` `habit` `habit_log` `focus_session` `app_owner` |
-| Generated types | ✅ `packages/data/src/types.gen.ts`, pinned by `types.assert.ts` |
-| Anonymous access denied | ✅ verified — HTTP 401 on all 8 tables, read and write |
-| Signups disabled | ✅ applied via `config push` |
-| Password floor 12 chars | ✅ applied via `config push` |
-| **Owner claimed** | ❌ **blocked — see below** |
+```sql
+select u.email, o.claimed_at from app_owner o join auth.users u on u.id = o.user_id;
+```
+
+Exactly one row means RLS will admit you. **Zero rows means the database is closed to everything**,
+which is the deliberate deny-by-default state a fresh project starts in — see "Rebuilding from
+scratch" below.
 
 ## Migrations
 
@@ -28,43 +27,40 @@ Migrations are plain SQL. There is no Prisma — see
 | `20260730000500_rls.sql` | RLS pinned to `app_owner` |
 | `20260730000600_grants.sql` | revoke `anon`, grant `authenticated` |
 | `20260730000700_realtime.sql` | publication membership |
-| `20260730000800_claim_owner.sql` | ⏳ **not yet applied** — needs the account to exist first |
+| `20260730000800_claim_owner.sql` | records the earliest `auth.users` row as the owner |
 
-## The one remaining step
+Auth settings applied via `config push`: signups disabled, anonymous sign-ins disabled, password
+floor 12 characters with `lower_upper_letters_digits`, TOTP MFA enrolment enabled.
 
-**The database is currently closed to everything.** `app_owner` is empty, so `is_app_owner()`
-returns false for every request and RLS denies all access. That is deliberate deny-by-default,
-not a fault — but nothing works until ownership is claimed.
+Verified when first applied: anonymous requests return HTTP 401 on all eight tables for both reads
+and writes; an authenticated non-owner gets `200 []` on reads and **403 `42501`** on writes — which
+is what earns the `with check` clause its place in the policies.
 
-### 1. Create the account
+## Rebuilding from scratch
+
+Only needed for a new project, or after a reset. The order matters: `0008_claim_owner` **raises an
+exception and fails the migration** if no account exists, rather than recording itself as applied
+and leaving the database permanently locked out.
+
+### 1. Create the account first
 
 Dashboard → **Authentication → Users → Add user → Create new user**
 
 - your email address
-- a password of **at least 12 characters** with upper, lower and a digit (the policy is enforced
-  server-side, so a weaker one is rejected)
+- a password of **at least 12 characters** with upper, lower and a digit — the policy is enforced
+  server-side, so a weaker one is rejected
 - tick **Auto Confirm User**
 
-Signups are disabled, so this dashboard path is the only way to create it — which is the point.
+Signups are disabled, so this dashboard path is the only way to create it. That is the point.
 
-### 2. Claim ownership
+### 2. Apply the migrations
 
 ```bash
 cd /Users/theamkimhout/Kimhout/app
 supabase db push
 ```
 
-`20260730000800_claim_owner.sql` inserts the earliest `auth.users` row into `app_owner`. It
-**raises an exception and fails the migration** if no account exists, rather than silently
-recording itself as applied and leaving the database locked out.
-
-Verify:
-
-```sql
-select u.email, o.claimed_at from app_owner o join auth.users u on u.id = o.user_id;
-```
-
-Exactly one row, your account.
+Then re-run the verification query above.
 
 ## Login is email + password, not magic link
 
@@ -107,7 +103,14 @@ any table would break offline writes, so that shows up as a type error.
 ## Backups
 
 The free tier has **no point-in-time recovery**, so PRD §7.2 is not achievable as written. The
-replacement is a client-side JSON export (Phase 9). Manual dump:
+replacement is in the app: **Settings → Export JSON**, which writes every local row — tombstones
+included — and can be restored from the same screen.
+
+That covers a risk PITR never would. Unsynced writes live only in IndexedDB, and Safari and iOS
+evict it for sites unused for about a week, so the export is worth taking whenever the sync queue
+shown on that screen is not empty.
+
+A server-side dump, for the database rather than the device:
 
 ```bash
 supabase db dump --project-ref twxkbcxudvrwqkkaecks -f backup.sql
