@@ -61,7 +61,9 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="flex flex-1 items-center justify-center p-6">
+    // `overflow-y-auto` because the body no longer scrolls — on a short phone in landscape the
+    // form is taller than the viewport, and without this the sign-in button is unreachable.
+    <main className="flex flex-1 items-center justify-center overflow-y-auto p-6">
       <div className="w-full max-w-sm">
         <div className="mb-8">
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">RainFlow</h1>

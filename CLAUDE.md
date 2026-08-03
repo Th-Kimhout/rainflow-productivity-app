@@ -130,6 +130,13 @@ Two that are easy to "fix" wrongly:
 - **Playwright lives in the ROOT `package.json`.** Next 16 declares `@playwright/test` as an optional
   peer, so installing it into `apps/web` forks `next` into two pnpm instances and breaks the dev
   server with a "module factory is not available" error.
+- **HTML5 drag-and-drop is dead on touch.** No mobile browser dispatches `dragstart` for a finger,
+  so anything draggable needs a pointer-event route beside it or it silently does not exist on a
+  phone. See the mobile section of ADR 0001.
+- **Hover-only affordances hide with `pointer-fine:`, never `pointer-coarse:`** — scope the hiding
+  to where hovering can undo it, rather than letting two rules race on variant sort order.
+- **The 16px form-control rule in `globals.css` is unlayered on purpose.** Tailwind's `utilities`
+  layer beats `base`, so inside `@layer base` it would lose to every `text-xs` and do nothing.
 
 ## Testing conventions
 
@@ -141,3 +148,8 @@ Two that are easy to "fix" wrongly:
   silently never runs.
 - `getByRole(name:)` matches accessible names as a **substring**; task rows carry both a title button
   and a `Delete "<title>"` button, so title assertions need `exact: true`.
+- `toHaveText` compares `textContent`, so `toHaveText(await el.innerText())` **can never match** —
+  `innerText` adds newlines between block children that `textContent` does not. The negated form
+  then passes unconditionally.
+- `page.mouse` cannot exercise a touch path: Chromium turns mouse-drag on a `draggable` element into
+  a native HTML5 drag. Use CDP `Input.dispatchTouchEvent` (see `e2e/mobile.spec.ts`).

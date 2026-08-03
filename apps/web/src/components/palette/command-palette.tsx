@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Kbd } from "@/components/common/kbd";
 import { ParsedChips } from "@/components/palette/parsed-chips";
+import { closeCapture, openCapture, toggleCapture, useCaptureOpen } from "@/lib/capture";
 import { useWriteContext } from "@/lib/data/provider";
 import { PRIORITY, isEditable, useKeyHandler } from "@/lib/keyboard/provider";
 
@@ -20,12 +21,16 @@ import { PRIORITY, isEditable, useKeyHandler } from "@/lib/keyboard/provider";
  */
 export function CommandPalette() {
   const { db, ctx } = useWriteContext();
-  const [open, setOpen] = useState(false);
+  /*
+   * Open state lives in a module store, not here, so the bottom bar's ＋ can reach it. See
+   * lib/capture.ts — on a phone that button is the only way to create a task at all.
+   */
+  const open = useCaptureOpen();
   const [value, setValue] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
   const close = useCallback(() => {
-    setOpen(false);
+    closeCapture();
     setValue("");
   }, []);
 
@@ -34,7 +39,7 @@ export function CommandPalette() {
     // thought while editing something else is the main use case (§5.1 step 3).
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
       event.preventDefault();
-      setOpen((v) => !v);
+      toggleCapture();
       return true;
     }
 
@@ -52,7 +57,7 @@ export function CommandPalette() {
         !isEditable(event.target)
       ) {
         event.preventDefault();
-        setOpen(true);
+        openCapture();
         return true;
       }
       return false;
@@ -102,7 +107,9 @@ export function CommandPalette() {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center bg-background/70 p-4 pt-[15vh] backdrop-blur-sm"
+      // `dvh`, and a shallower drop on a phone: the software keyboard eats the bottom half of
+      // the screen the instant this opens, so 15% of a *large* viewport puts the input under it.
+      className="fixed inset-0 z-50 flex items-start justify-center bg-background/70 p-4 pt-[8dvh] backdrop-blur-sm sm:pt-[15dvh]"
       onClick={close}
       role="presentation"
     >
@@ -145,7 +152,7 @@ export function CommandPalette() {
               "Goes to Inbox"
             )}
           </span>
-          <span className="flex items-center gap-1.5">
+          <span className="hidden items-center gap-1.5 sm:flex">
             <Kbd>Enter</Kbd> save
             <Kbd>Esc</Kbd> cancel
           </span>

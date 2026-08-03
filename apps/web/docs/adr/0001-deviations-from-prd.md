@@ -343,3 +343,75 @@ free, what goes in it". A drag shorter than two slots is treated as a stray clic
 
 The grid also scrolls to an hour before the now-line on open (07:00 on other days). Opening at 00:00
 meant every visit began by scrolling past eight empty hours of night.
+
+## The app is usable on a phone, which required more than a layout
+
+The PRD never mentions mobile. Adding breakpoints turned out to be the small half of the job: three
+capabilities were not cramped on a touchscreen, they were **absent**, because the only route to each
+needed hardware a phone does not have.
+
+**Capture had no button.** §3.1 binds quick capture to `⌘K` and `C` and to nothing else. Without a
+keyboard there was no way to create a task at all — RainFlow was read-only on a phone. The `＋` in
+the middle of the bottom bar is the fix, and the middle is deliberate: it is the one point a thumb
+reaches from either hand without regripping. It opens the palette through a module-scoped store
+(`lib/capture.ts`), because the button and the `⌘K` handler are siblings several levels apart.
+
+**HTML5 drag-and-drop does not exist on a touchscreen.** Mobile Safari and Chrome for Android never
+dispatch `dragstart` for a finger. That silently removed both calendar drag paths — rail onto the
+grid, and a block to a new time — and quadrant drag in the matrix. Every one now has a pointer-event
+route: tap empty grid to create, a grip along a block's top edge to move, and the existing bottom
+handle to resize. Pointer events are the only input model both devices agree on.
+
+Creating is a **tap**, not a drag, and that is not a simplification. The grid is also the scroll
+container, so capturing a vertical drag to draw a range would leave the day unscrollable. A tap
+opens the picker for a default-length block, which is adjustable immediately afterwards.
+
+**Hover-only affordances were unreachable.** Row delete, block unschedule and habit archive were all
+`group-hover`. They are written as `pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100` —
+hiding scoped to where hovering can undo it — rather than `opacity-0 pointer-coarse:opacity-100`,
+which relies on Tailwind's variant sort order to break a tie between two competing rules.
+
+### Layout
+
+| Below `md` | `md`–`xl` | `xl` and up |
+|---|---|---|
+| Bottom bar, sidebar hidden | Sidebar | Sidebar |
+| Inspector is a full-height sheet | Inspector is a sheet | Inspector docks as a third pane |
+| Matrix stacks to one column | 2×2 | 2×2 |
+| Calendar rail hidden | Rail | Rail |
+
+The inspector docks at `xl` rather than `md` because 224 + 320px of permanent chrome leaves a 480px
+canvas at 1024px wide — narrower than the calendar grid the drawer is describing.
+
+The calendar rail is **not** replaced by a phone equivalent. Its only job is to be something to drag
+from, and dragging from it is exactly what does not work; the same task list is reachable by typing
+into the picker.
+
+### Two traps worth naming
+
+**`viewportFit: "cover"`, and no `maximumScale`.** Capping the scale is the usual one-line cure for
+iOS zooming into a focused input, and it works by disabling pinch-zoom for everyone, permanently.
+The cure is a CSS rule putting form controls at 16px under 768px — the size iOS is actually asking
+for. That rule is **unlayered on purpose**: Tailwind's `utilities` layer beats its `base` layer, so
+written inside `@layer base` it loses to every `text-xs` in the app and does nothing at all.
+
+**`h-dvh` on the body, not `h-full`.** `height: 100%` resolves against mobile Safari's *large*
+viewport — the one that assumes the URL bar is hidden — so the status bar and the bottom bar sat
+below the fold until you scrolled.
+
+### Testing
+
+A second Playwright project runs `e2e/mobile.spec.ts` on a Pixel 7 profile, and `hasTouch` is the
+part that matters: `tap()` dispatches real touch events, so a mouse-only handler fails there and
+passes everywhere else.
+
+Two traps caught by mutation-testing those specs, both of which had produced a green test over a
+broken feature:
+
+- **`page.mouse` cannot test a touch drag.** Chromium turns mouse-down-and-move on a `draggable`
+  element into a native HTML5 drag, so the block moved by the desktop path and the spec passed with
+  the grip completely unwired. The move test dispatches touch points through CDP instead.
+- **`toHaveText(await locator.innerText())` can never match.** `toHaveText` compares against
+  `textContent` with whitespace collapsed, and `innerText` inserts a newline that `textContent` does
+  not have — so the negated form passes whatever the element does. This had made the desktop
+  calendar spec's move assertion vacuous too.

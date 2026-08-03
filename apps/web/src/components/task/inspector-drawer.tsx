@@ -70,30 +70,47 @@ export function InspectorDrawer() {
   if (!taskId) return null;
 
   return (
-    <aside
-      aria-label="Task details"
-      className="flex w-80 shrink-0 flex-col overflow-y-auto border-l border-border bg-card"
-    >
-      {task ? (
-        <InspectorBody task={task} onClose={closeTask} />
-      ) : (
-        /*
-         * Either still loading from Dexie, or the task was deleted — possibly on another device,
-         * with the tombstone arriving while it was open. Both read the same to the user, and both
-         * want the same affordance: a way out.
-         */
-        <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
-          <p className="text-sm text-muted-foreground">This task is no longer available.</p>
-          <button
-            type="button"
-            onClick={closeTask}
-            className="text-xs text-rain underline-offset-2 hover:underline"
-          >
-            Close
-          </button>
-        </div>
-      )}
-    </aside>
+    <>
+      {/*
+       * Backdrop, and only while the drawer is floating. Docked at `xl` it is a pane beside the
+       * canvas and dimming the canvas would be nonsense; below that it covers the screen, and an
+       * overlay you can only leave via one small ✕ is a trap on a device with no Escape key.
+       */}
+      <div
+        onClick={closeTask}
+        role="presentation"
+        className="fixed inset-0 z-30 bg-background/60 backdrop-blur-sm xl:hidden"
+      />
+
+      <aside
+        aria-label="Task details"
+        className={
+          "fixed inset-y-0 right-0 z-30 flex w-full max-w-md flex-col overflow-y-auto " +
+          "border-l border-border bg-card shadow-2xl " +
+          "xl:static xl:z-auto xl:w-80 xl:max-w-none xl:shrink-0 xl:shadow-none"
+        }
+      >
+          {task ? (
+          <InspectorBody task={task} onClose={closeTask} />
+        ) : (
+          /*
+           * Either still loading from Dexie, or the task was deleted — possibly on another
+           * device, with the tombstone arriving while it was open. Both read the same to the
+           * user, and both want the same affordance: a way out.
+           */
+          <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
+            <p className="text-sm text-muted-foreground">This task is no longer available.</p>
+            <button
+              type="button"
+              onClick={closeTask}
+              className="text-xs text-rain underline-offset-2 hover:underline"
+            >
+              Close
+            </button>
+          </div>
+        )}
+      </aside>
+    </>
   );
 }
 
@@ -150,7 +167,7 @@ function InspectorBody({ task, onClose }: { task: TaskRow; onClose: () => void }
           type="button"
           onClick={onClose}
           aria-label="Close inspector"
-          className="shrink-0 text-muted-foreground hover:text-foreground"
+          className="-mr-1 -mt-1 shrink-0 p-1 text-muted-foreground hover:text-foreground"
         >
           <X className="size-4" />
         </button>

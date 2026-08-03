@@ -5,6 +5,7 @@ import { type ReactNode, Suspense } from "react";
 import { EnergyPrompt } from "@/components/focus/energy-prompt";
 import { ZenMode } from "@/components/focus/zen-mode";
 import { CommandPalette } from "@/components/palette/command-palette";
+import { MobileNav } from "@/components/shell/mobile-nav";
 import { ShortcutHelp } from "@/components/shell/shortcut-help";
 import { Sidebar } from "@/components/shell/sidebar";
 import { StatusBar } from "@/components/shell/status-bar";
@@ -37,16 +38,25 @@ export function AppShell({ children }: { children: ReactNode }) {
       */}
       <Suspense fallback={<ShellFallback />}>
         <FocusProvider>
-          <div className="flex flex-1 overflow-hidden">
+          <div className="flex min-h-0 flex-1 overflow-hidden">
             <Sidebar />
 
             <div className="flex min-w-0 flex-1 flex-col">
-              <main className="flex-1 overflow-y-auto">{children}</main>
+              <main className="min-h-0 flex-1 overflow-y-auto">{children}</main>
               <StatusBar />
             </div>
 
+            {/*
+              Docked as a third pane from `xl` up and an overlay sheet below it. 224 + 320px of
+              permanent chrome leaves a 480px canvas at 1024px wide, which is narrower than the
+              calendar's own grid — so the drawer stops taking width before it starts costing
+              the view it is describing.
+            */}
             <InspectorDrawer />
           </div>
+
+          {/* The keyboard's stand-in on a touchscreen. Below `md` only — see MobileNav. */}
+          <MobileNav />
 
           <ZenMode />
           <EnergyPrompt />

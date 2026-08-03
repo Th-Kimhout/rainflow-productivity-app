@@ -60,13 +60,13 @@ export function EnergyPrompt() {
     <div
       role="dialog"
       aria-label="How was your energy?"
-      className="fixed bottom-14 left-1/2 z-50 -translate-x-1/2 rounded-lg border border-border bg-card p-3 shadow-2xl"
+      className="fixed bottom-[calc(6rem+env(safe-area-inset-bottom))] left-1/2 z-50 max-w-[calc(100vw-1.5rem)] -translate-x-1/2 rounded-lg border border-border bg-card p-3 shadow-2xl md:bottom-14"
     >
       <p className="mb-2 text-center text-xs text-muted-foreground">
         How was your energy?
       </p>
 
-      <div className="flex items-center gap-1.5">
+      <div className="flex flex-wrap items-center justify-center gap-1.5">
         {OPTIONS.map((option) => (
           <button
             key={option.value}

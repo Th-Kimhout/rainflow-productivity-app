@@ -37,7 +37,7 @@ export function AnalyticsView() {
     digest.focusMinutes > 0 || digest.velocity.completed > 0 || digest.consistency.habits.length > 0;
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6 px-6 py-5">
+    <div className="mx-auto max-w-4xl space-y-6 px-4 py-5 sm:px-6">
       <header>
         <h1 className="text-lg font-semibold tracking-tight text-foreground">
           Weekly review
@@ -124,7 +124,7 @@ export function AnalyticsView() {
           <ul className="space-y-1.5">
             {digest.consistency.habits.map((h) => (
               <li key={h.id} className="flex items-center gap-3 text-xs">
-                <span className="w-40 shrink-0 truncate text-foreground">{h.title}</span>
+                <span className="w-24 shrink-0 truncate text-foreground sm:w-40">{h.title}</span>
                 <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
                   <span
                     className="block h-full rounded-full bg-success"
@@ -134,7 +134,7 @@ export function AnalyticsView() {
                 <span className="w-10 shrink-0 text-right tabular-nums text-muted-foreground">
                   {Math.round(h.rate * 100)}%
                 </span>
-                <span className="w-14 shrink-0 text-right text-muted-foreground">
+                <span className="hidden w-14 shrink-0 text-right text-muted-foreground sm:block">
                   {h.current}d streak
                 </span>
               </li>

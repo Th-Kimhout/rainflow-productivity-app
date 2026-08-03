@@ -183,9 +183,20 @@ test("blocks out time on the calendar by drawing, then by keyboard", async ({ pa
    * §4.2 claims the app is 100% operable without a mouse, and the calendar was the one view
    * where that was false. A newly placed block is selected, so these act on it immediately.
    */
-  // The card renders "<title>\n<start>–<end>", so its own text is the simplest thing that
+  // The card renders "<title><start>–<end>", so its own text is the simplest thing that
   // changes when the block moves.
-  const before = await block.innerText();
+  /*
+   * `textContent`, NOT `innerText`. `toHaveText` compares against the element's textContent with
+   * whitespace collapsed, and `innerText` inserts a newline between the title and the time that
+   * textContent does not have — so `toHaveText(innerText)` can never match, and the negated form
+   * passes whatever the block does. Verified by unwiring the move and watching the spec still go
+   * green.
+   */
+  const before = await block.textContent();
+  // Narrowing, not defensiveness — but a thrown error rather than `?? ""`, because an empty
+  // baseline would make the negated assertion below pass unconditionally, which is the exact
+  // failure mode this comparison already fell into once.
+  if (before === null) throw new Error("the block has no text to compare against");
 
   await page.keyboard.press("Shift+ArrowDown");
   await expect(block).not.toHaveText(before);

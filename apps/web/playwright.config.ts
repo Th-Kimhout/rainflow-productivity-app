@@ -24,7 +24,20 @@ export default defineConfig({
     trace: "retain-on-failure",
   },
 
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  projects: [
+    { name: "chromium", use: { ...devices["Desktop Chrome"] }, testIgnore: /mobile\.spec\.ts/ },
+    /*
+     * A real phone profile: 412×839, `hasTouch`, `isMobile`. The touch flag is the point — the
+     * whole class of bug this project exists to catch is code that only responds to a mouse, and
+     * a narrow desktop window would pass every one of those.
+     *
+     * Pixel rather than an iPhone descriptor purely so it runs on Chromium: the iPhone profiles
+     * default to WebKit, which is a second browser to install for a difference this suite does
+     * not test. The layout is CSS and the gestures are pointer events; neither is engine-specific
+     * here.
+     */
+    { name: "mobile", use: { ...devices["Pixel 7"] }, testMatch: /mobile\.spec\.ts/ },
+  ],
 
   webServer: {
     /*

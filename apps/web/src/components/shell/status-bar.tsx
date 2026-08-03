@@ -28,7 +28,9 @@ export function StatusBar() {
         {!status.online ? (
           <span className="flex items-center gap-1.5 text-muted-foreground">
             <CloudOff className="size-3.5" aria-hidden />
-            Offline — changes are saved locally
+            {/* The reassurance is the long half, and it is the half that does not fit. */}
+            <span className="sm:hidden">Offline</span>
+            <span className="hidden sm:inline">Offline — changes are saved locally</span>
           </span>
         ) : status.phase === "syncing" || status.phase === "hydrating" ? (
           <span className="flex items-center gap-1.5 text-muted-foreground">
@@ -66,7 +68,7 @@ export function StatusBar() {
         <FocusTimer />
 
         {status.lastError && status.phase === "error" ? (
-          <span className="max-w-80 truncate text-muted-foreground" title={status.lastError}>
+          <span className="hidden max-w-80 truncate text-muted-foreground sm:block" title={status.lastError}>
             {status.lastError}
           </span>
         ) : null}

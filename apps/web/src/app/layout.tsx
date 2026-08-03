@@ -30,6 +30,20 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   themeColor: "#0f172a",
   colorScheme: "dark",
+  /*
+   * Next already emits `width=device-width, initial-scale=1`; `viewportFit` is the part it does
+   * not assume. Without it the page is letterboxed inside the safe area on a notched phone, and
+   * the bottom nav floats above a dead strip instead of meeting the edge of the screen. The
+   * inverse obligation comes with it: anything pinned to an edge has to pad itself with
+   * `env(safe-area-inset-*)`, or it lands under the home indicator.
+   */
+  viewportFit: "cover",
+  /*
+   * Deliberately NOT capping `maximumScale`. It is the usual one-line cure for iOS zooming into
+   * a focused input, and it works by disabling pinch-zoom for everyone, permanently. The cure is
+   * in globals.css instead: form controls go to 16px on phone widths, which is the size iOS is
+   * actually asking for.
+   */
 };
 
 export default function RootLayout({
@@ -46,7 +60,19 @@ export default function RootLayout({
       lang="en"
       className={`dark ${inter.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      {/*
+       * `100dvh` rather than `h-full`, and the app frame is exactly the viewport.
+       *
+       * `height: 100%` resolves against the *large* viewport on mobile Safari — the one that
+       * assumes the URL bar is hidden — so the status bar and the bottom nav sat below the fold
+       * until you scrolled, and the page scrolled as a whole because it genuinely was too tall.
+       * `dvh` tracks the visible height as the browser chrome slides away.
+       *
+       * `overflow-hidden` then makes "the page never scrolls, panes do" structural rather than
+       * incidental. Anything that needs to scroll says so.
+       */
+      }
+      <body className="flex h-dvh flex-col overflow-hidden">{children}</body>
     </html>
   );
 }

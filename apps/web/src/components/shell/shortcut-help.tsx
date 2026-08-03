@@ -112,7 +112,7 @@ export function ShortcutHelp() {
       role="presentation"
     >
       <div
-        className="w-full max-w-lg rounded-lg border border-border bg-card p-5 shadow-2xl"
+        className="max-h-[85dvh] w-full max-w-lg overflow-y-auto rounded-lg border border-border bg-card p-5 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
@@ -120,7 +120,7 @@ export function ShortcutHelp() {
       >
         <h2 className="mb-4 text-sm font-semibold text-foreground">Keyboard shortcuts</h2>
 
-        <div className="grid grid-cols-2 gap-x-6 gap-y-4">
+        <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
           {GROUPS.map((group) => (
             <section key={group.title}>
               <h3 className="mb-1.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">

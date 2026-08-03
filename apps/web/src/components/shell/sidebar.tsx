@@ -1,20 +1,11 @@
 "use client";
 
-import {
-  BarChart3,
-  CalendarCheck,
-  CalendarRange,
-  Grid2x2,
-  Inbox,
-  LogOut,
-  Repeat,
-  Settings,
-  Tags,
-} from "lucide-react";
+import { LogOut } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import { Kbd } from "@/components/common/kbd";
+import { NAV } from "@/components/shell/nav-items";
 import { getSupabase } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 
@@ -26,26 +17,17 @@ import { cn } from "@/lib/utils";
  * fetched fails offline. Prefetching all destinations on first render means the whole app is
  * warm before it is needed, which shrinks "offline" from "only this page works" to "everything
  * you'd navigate to works".
+ *
+ * Hidden below `md`, where `<MobileNav>` takes over: 224px of permanent navigation out of a
+ * 390px screen is more than half the width spent on chrome.
  */
-
-const NAV = [
-  { href: "/today", label: "Today", icon: CalendarCheck, chord: "G T" },
-  { href: "/inbox", label: "Inbox", icon: Inbox, chord: "G I" },
-  { href: "/matrix", label: "Matrix", icon: Grid2x2, chord: "G E" },
-  { href: "/calendar", label: "Calendar", icon: CalendarRange, chord: "G C" },
-  { href: "/habits", label: "Habits", icon: Repeat, chord: "G H" },
-  { href: "/tags", label: "Tags", icon: Tags, chord: "G G" },
-  { href: "/analytics", label: "Analytics", icon: BarChart3, chord: "G A" },
-  { href: "/settings", label: "Settings", icon: Settings, chord: "G S" },
-] as const;
-
 export function Sidebar() {
   const pathname = usePathname();
 
   return (
     <nav
       aria-label="Main"
-      className="flex w-56 shrink-0 flex-col border-r border-border bg-sidebar"
+      className="hidden w-56 shrink-0 flex-col border-r border-border bg-sidebar md:flex"
     >
       <div className="flex h-12 items-center gap-2 px-4">
         <span className="size-2 rounded-full bg-rain" aria-hidden />

@@ -29,7 +29,7 @@ export default function TodayPage() {
 
   return (
     <div>
-      <header className="border-b border-border px-6 py-4">
+      <header className="border-b border-border px-4 py-4 sm:px-6">
         <p className="text-xs uppercase tracking-widest text-muted-foreground">
           {WEEKDAYS[weekdayOf(day)]}
         </p>

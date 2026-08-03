@@ -140,8 +140,14 @@ export function MatrixView() {
   const selectedId = flat[selected]?.id ?? null;
 
   return (
-    <div className="flex h-full flex-col">
-      <div className="grid flex-1 grid-cols-2 grid-rows-2 gap-px bg-border">
+    <div className="flex h-full min-h-0 flex-col">
+      {/*
+        Two-by-two is the whole point of the picture, and it stops being a picture at 390px —
+        four cells of ~190px wide and ~150px tall, each scrolling independently, is four
+        keyholes. Below `md` the quadrants stack in reading order (DO_FIRST first) and the page
+        scrolls as one, which keeps the priority ordering that the grid conveys by position.
+      */}
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-px overflow-y-auto bg-border md:grid-cols-2 md:grid-rows-2 md:overflow-hidden">
         {LAYOUT.map(({ quadrant, hint, accent, ring }) => (
           <section
             key={quadrant}
@@ -160,7 +166,7 @@ export function MatrixView() {
               setDragging(null);
             }}
             className={cn(
-              "flex min-h-0 flex-col bg-background transition-colors",
+              "flex flex-col bg-background transition-colors md:min-h-0",
               dragOver === quadrant && `bg-accent/60 ring-1 ring-inset ${ring}`,
             )}
           >
@@ -171,7 +177,7 @@ export function MatrixView() {
               <span className="text-[10px] text-muted-foreground">{hint}</span>
             </header>
 
-            <ul className="min-h-0 flex-1 space-y-1 overflow-y-auto p-2">
+            <ul className="flex-1 space-y-1 p-2 md:min-h-0 md:overflow-y-auto">
               {groups[quadrant].length === 0 ? (
                 <li className="px-2 py-1 text-xs text-muted-foreground">Empty</li>
               ) : (
@@ -210,7 +216,17 @@ export function MatrixView() {
         ))}
       </div>
 
-      <div className="flex shrink-0 items-center gap-3 border-t border-border px-4 py-1.5 text-[10px] text-muted-foreground">
+      {/*
+        No drag on a touchscreen and no `1`–`4` without a keyboard, so on a phone a task changes
+        quadrant from the inspector's Urgent/Important toggles — which are the same two booleans
+        this grid is a picture of (ADR 0001 decision 9), one tap away rather than a second control
+        to keep in sync with them.
+      */}
+      <div className="shrink-0 border-t border-border px-4 py-1.5 text-[10px] text-muted-foreground sm:hidden">
+        Tap a task to open it — Urgent and Important are what move it between cells.
+      </div>
+
+      <div className="hidden shrink-0 items-center gap-3 border-t border-border px-4 py-1.5 text-[10px] text-muted-foreground sm:flex">
         <span className="flex items-center gap-1">
           <Kbd>1</Kbd>–<Kbd>4</Kbd> move quadrant
         </span>

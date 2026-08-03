@@ -34,7 +34,7 @@ export function SettingsView() {
   const { db, status, syncNow } = useData();
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6 px-6 py-5">
+    <div className="mx-auto max-w-3xl space-y-6 px-4 py-5 sm:px-6">
       <header>
         <h1 className="text-lg font-semibold tracking-tight text-foreground">
           Data &amp; sync

@@ -95,7 +95,7 @@ export function TaskList({
 
   if (tasks.length === 0) {
     return (
-      <div className="px-6 py-10 text-center">
+      <div className="px-4 py-10 text-center sm:px-6">
         <p className="text-sm text-muted-foreground">{emptyMessage}</p>
         <p className="mt-2 text-xs text-muted-foreground">
           Press <Kbd>C</Kbd> or <Kbd>⌘K</Kbd> to capture one.
@@ -157,7 +157,7 @@ function TaskRowItem({
     <li
       onMouseDown={onSelect}
       className={cn(
-        "group flex items-center gap-3 px-6 py-2.5 transition-colors",
+        "group flex items-center gap-3 px-4 py-2.5 transition-colors sm:px-6",
         // The row shown in the inspector reads stronger than the mere keyboard cursor, so it
         // stays identifiable after focus moves on.
         open
@@ -182,7 +182,9 @@ function TaskRowItem({
         checked={done}
         onChange={onToggle}
         aria-label={`Mark "${task.title}" as ${done ? "incomplete" : "complete"}`}
-        className="size-4 shrink-0 cursor-pointer accent-rain"
+        // Larger where a fingertip has to hit it. 16px is comfortable with a cursor and
+        // genuinely hard to tap.
+        className="size-5 shrink-0 cursor-pointer accent-rain sm:size-4"
       />
 
       <div className="min-w-0 flex-1">
@@ -204,7 +206,16 @@ function TaskRowItem({
         type="button"
         onClick={onDelete}
         aria-label={`Delete "${task.title}"`}
-        className="shrink-0 text-muted-foreground opacity-0 transition-opacity hover:text-priority-high group-hover:opacity-100"
+        /*
+         * Hover-revealed with a mouse, permanently visible without one. A touchscreen has no
+         * hover, so `group-hover` alone left this button unreachable — the row's only delete.
+         *
+         * Written as `pointer-fine:opacity-0` rather than `opacity-0 pointer-coarse:opacity-100`
+         * so the two rules never compete: the hiding only ever applies where hovering can undo
+         * it. The alternative depends on Tailwind's variant sort order to break the tie, and a
+         * button that is invisible and untappable is not a tie worth risking.
+         */
+        className="-mr-1 shrink-0 p-1 text-muted-foreground transition-opacity hover:text-priority-high pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100"
       >
         <Trash2 className="size-4" />
       </button>

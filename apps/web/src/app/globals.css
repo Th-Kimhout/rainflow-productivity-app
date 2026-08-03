@@ -194,6 +194,27 @@
 }
 
 /*
+ * iOS zooms the whole page when you focus a control whose text is under 16px, and it does not
+ * zoom back out when you leave the field — so one tap on a filter box leaves the app permanently
+ * magnified and horizontally scrolling.
+ *
+ * The UI is 12–14px throughout on purpose (§4.1), so the fix is scoped to form controls, and
+ * only at phone widths. Checkboxes and radios are excluded because font-size drives their
+ * rendered box on some engines, and a 16px checkbox is a different design.
+ *
+ * DELIBERATELY UNLAYERED. Tailwind's `utilities` layer beats its `base` layer, so a rule written
+ * inside `@layer base` loses to every `text-xs` in the app and silently does nothing. Unlayered
+ * CSS outranks all layered CSS regardless of specificity, which is the one placement that works.
+ */
+@media (max-width: 767px) {
+  input:not([type="checkbox"]):not([type="radio"]),
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
+/*
  * Shiki dual-theme output (§3.5 code fences).
  *
  * `highlight()` emits BOTH themes as CSS variables — `--shiki-light` / `--shiki-dark` — rather

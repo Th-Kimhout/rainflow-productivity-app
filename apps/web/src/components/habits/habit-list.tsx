@@ -78,7 +78,7 @@ export function HabitList() {
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-6 py-3">
+      <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3 sm:px-6">
         <h1 className="text-lg font-semibold tracking-tight text-foreground">Habits</h1>
 
         <div className="flex items-center gap-2">
@@ -145,7 +145,7 @@ export function HabitList() {
         )}
       </div>
 
-      <footer className="flex shrink-0 items-center gap-3 border-t border-border px-4 py-1.5 text-[10px] text-muted-foreground">
+      <footer className="hidden shrink-0 items-center gap-3 border-t border-border px-4 py-1.5 text-[10px] text-muted-foreground sm:flex">
         <span className="flex items-center gap-1">
           <Kbd>Space</Kbd> tick today
         </span>
@@ -185,7 +185,7 @@ function HabitRowItem({
     <li
       onMouseDown={onSelect}
       className={cn(
-        "group px-6 py-4 transition-colors",
+        "group px-4 py-4 transition-colors sm:px-6",
         selected ? "bg-rain-soft" : "hover:bg-accent/30",
         archived && "opacity-60",
       )}
@@ -233,7 +233,7 @@ function HabitRowItem({
             <p className="mt-0.5 truncate text-xs text-muted-foreground">{habit.description}</p>
           )}
 
-          <div className="mt-1.5 flex items-center gap-4 text-[11px] text-muted-foreground">
+          <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
             <span className="flex items-center gap-1">
               <Flame
                 className={cn("size-3", streak.current > 0 ? "text-priority-high" : "opacity-40")}
@@ -271,7 +271,7 @@ function HabitRowItem({
           </div>
         </div>
 
-        <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+        <div className="flex shrink-0 items-center gap-1 transition-opacity pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100">
           <button
             type="button"
             onClick={onArchive}
@@ -352,7 +352,7 @@ function NewHabitForm({
         if (!title.trim()) return;
         void onCreate({ title: title.trim(), kind, weekdays, intervalDays, monthDay, color });
       }}
-      className="space-y-3 border-b border-border bg-card px-6 py-4"
+      className="space-y-3 border-b border-border bg-card px-4 py-4 sm:px-6"
     >
       <input
         autoFocus

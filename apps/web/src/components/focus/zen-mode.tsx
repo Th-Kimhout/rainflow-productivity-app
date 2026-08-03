@@ -75,7 +75,7 @@ export function ZenMode() {
   const onThisTask = state.taskId === zenTaskId;
 
   return (
-    <div className="fixed inset-0 z-40 flex flex-col items-center justify-center gap-8 bg-background">
+    <div className="fixed inset-0 z-40 flex flex-col items-center justify-center gap-6 bg-background px-4 sm:gap-8">
       <button
         type="button"
         onClick={closeZen}
@@ -85,11 +85,11 @@ export function ZenMode() {
         <Minimize2 className="size-4" />
       </button>
 
-      <div className="max-w-2xl px-8 text-center">
+      <div className="max-w-2xl px-2 text-center sm:px-8">
         <p className="text-xs uppercase tracking-widest text-muted-foreground">
           {active ? PHASE_LABELS[state.phase] : "Ready"}
         </p>
-        <h1 className="mt-2 text-balance text-2xl font-medium tracking-tight text-foreground">
+        <h1 className="mt-2 text-balance text-xl font-medium tracking-tight text-foreground sm:text-2xl">
           {task ? task.title : "This task is no longer available."}
         </h1>
       </div>
@@ -120,7 +120,7 @@ export function ZenMode() {
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-center gap-2">
           {!active || !onThisTask ? (
             <ZenButton
               primary
@@ -160,7 +160,7 @@ export function ZenMode() {
         </div>
       </div>
 
-      <p className="absolute bottom-6 flex items-center gap-3 text-[10px] text-muted-foreground">
+      <p className="absolute bottom-6 hidden items-center gap-3 text-[10px] text-muted-foreground sm:flex">
         <span className="flex items-center gap-1">
           <Kbd>Space</Kbd> play / pause
         </span>

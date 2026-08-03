@@ -19,7 +19,7 @@ export function TagView() {
 
   return (
     <div className="flex h-full flex-col">
-      <header className="shrink-0 border-b border-border px-6 py-3">
+      <header className="shrink-0 border-b border-border px-4 py-3 sm:px-6">
         <h1 className="flex items-center gap-1.5 text-lg font-semibold tracking-tight text-foreground">
           <Hash className="size-4" style={{ color: result?.tag?.color }} />
           {name ?? "Tags"}

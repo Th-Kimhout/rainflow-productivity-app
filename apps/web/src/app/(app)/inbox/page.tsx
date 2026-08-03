@@ -14,7 +14,7 @@ export default function InboxPage() {
 
   return (
     <div>
-      <header className="border-b border-border px-6 py-4">
+      <header className="border-b border-border px-4 py-4 sm:px-6">
         <p className="text-xs uppercase tracking-widest text-muted-foreground">Unprocessed</p>
         <h1 className="mt-0.5 text-xl font-semibold tracking-tight text-foreground">
           Inbox

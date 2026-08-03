@@ -2,6 +2,7 @@
 
 import {
   DAY_MINUTES,
+  DEFAULT_BLOCK_MINUTES,
   SLOT_MINUTES,
   type TaskRow,
   addDays,
@@ -39,6 +40,18 @@ import { cn } from "@/lib/utils";
  * rail creates a block; dropping an existing block moves it. Using one `dragging` state variable
  * for both would break the moment a drag started in one browser tab and ended in another, and
  * `dataTransfer` is the mechanism the platform already provides for exactly this.
+ *
+ * HTML5 DRAG-AND-DROP DOES NOT EXIST ON A TOUCHSCREEN. Mobile Safari and Chrome for Android never
+ * fire `dragstart` for a finger, so both drag paths above — rail onto the grid, and a block to a
+ * new time — are simply absent on a phone, with no error to say so. Everything on this screen
+ * therefore has a second, pointer-event route:
+ *
+ *   * creating   — tap empty grid for a default-length block (see `beginDraw`)
+ *   * moving     — the grip along a block's top edge (see `beginMove`)
+ *   * resizing   — the handle along its bottom edge, which already worked
+ *
+ * Pointer events are what both devices agree on. The HTML5 paths are kept for the mouse because
+ * they are what a desktop calendar's muscle memory expects, not because they are needed.
  */
 
 const PX_PER_MINUTE = 1;
@@ -159,6 +172,33 @@ export function CalendarView() {
 
     const el = event.currentTarget;
     const from = minuteAt(event.clientY);
+
+    /*
+     * A FINGER TAPS; IT DOES NOT DRAW.
+     *
+     * This element is also the scroll container, and a vertical drag on it is how a phone moves
+     * through the day. Capturing that gesture to draw a range would leave the calendar unable to
+     * scroll at all — twenty-four hours, stuck on whichever three are in view.
+     *
+     * So on touch a *tap* opens the picker for a default-length block at the tapped time. It
+     * reaches the same place in one gesture, and the length is adjustable straight afterwards
+     * with the resize handle. Movement past a few pixels means the finger was scrolling, and
+     * nothing happens.
+     */
+    if (event.pointerType !== "mouse") {
+      const startY = event.clientY;
+      const settle = (e: PointerEvent) => {
+        el.removeEventListener("pointerup", settle);
+        el.removeEventListener("pointercancel", settle);
+        if (e.type === "pointerup" && Math.abs(e.clientY - startY) <= 8) {
+          setPendingRange({ from, to: Math.min(DAY_MINUTES, from + DEFAULT_BLOCK_MINUTES) });
+        }
+      };
+      el.addEventListener("pointerup", settle);
+      el.addEventListener("pointercancel", settle);
+      return;
+    }
+
     el.setPointerCapture(event.pointerId);
     setDrawing({ from, to: from + SLOT_MINUTES });
 
@@ -356,6 +396,7 @@ export function CalendarView() {
                   selected={b.block.id === selectedId}
                   onSelect={() => setSelectedId(b.block.id)}
                   onOpen={() => b.task && openTask(b.task.id)}
+                  onMove={(minute) => void moveTimeBlock(db, ctx, b.block.id, day, minute)}
                   onResize={(mins) => void resizeTimeBlock(db, ctx, b.block.id, mins)}
                   onRemove={() => void softDelete(db, ctx, "time_block", b.block.id)}
                 />
@@ -376,7 +417,17 @@ export function CalendarView() {
           />
         )}
 
-        <footer className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-t border-border px-4 py-1.5 text-[10px] text-muted-foreground">
+        {/*
+          The keyboard legend, and only where there is a keyboard. On a phone it would be seven
+          bindings you cannot press, above the one gesture that works — which is what this line
+          says instead.
+        */}
+        <footer className="shrink-0 border-t border-border px-4 py-1.5 text-[10px] text-muted-foreground sm:hidden">
+          Tap the grid to block out time · drag a block&rsquo;s top edge to move it, its bottom
+          edge to resize
+        </footer>
+
+        <footer className="hidden shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-t border-border px-4 py-1.5 text-[10px] text-muted-foreground sm:flex">
           <span className="flex items-center gap-1">
             <Kbd>[</Kbd>
             <Kbd>]</Kbd> day
@@ -513,7 +564,7 @@ function TaskPicker({
                 type="button"
                 onClick={() => onPick(task.id)}
                 className={cn(
-                  "max-w-56 truncate rounded-md px-2 py-1 text-xs transition-colors",
+                  "max-w-full truncate rounded-md px-2 py-1.5 text-xs transition-colors sm:max-w-56",
                   i === 0
                     ? "bg-rain text-background"
                     : "text-foreground ring-1 ring-border hover:bg-accent",
@@ -547,22 +598,24 @@ function DayHeader({
    * `new Date(day)` parses a bare date as UTC midnight, which in Phnom Penh is 07:00 the same
    * morning — safe here, but only because the formatter is pinned to the app timezone too.
    */
-  const label = useMemo(
-    () =>
-      new Intl.DateTimeFormat("en-GB", {
-        weekday: "long",
-        day: "numeric",
-        month: "long",
-        timeZone: "Asia/Phnom_Penh",
-      }).format(new Date(`${day}T12:00:00Z`)),
-    [day],
-  );
+  // Two lengths, because "Wednesday, 12 August" plus the nav buttons, the Today chip and the
+  // planned total do not coexist in 390px. The short form is rendered alongside and swapped by
+  // breakpoint rather than measured — a layout that depends on measuring is a layout that flashes.
+  const [label, shortLabel] = useMemo(() => {
+    const at = new Date(`${day}T12:00:00Z`);
+    const format = (options: Intl.DateTimeFormatOptions) =>
+      new Intl.DateTimeFormat("en-GB", { ...options, timeZone: "Asia/Phnom_Penh" }).format(at);
+    return [
+      format({ weekday: "long", day: "numeric", month: "long" }),
+      format({ weekday: "short", day: "numeric", month: "short" }),
+    ];
+  }, [day]);
 
   const hours = Math.floor(plannedMinutes / 60);
   const mins = plannedMinutes % 60;
 
   return (
-    <header className="flex shrink-0 items-center gap-3 border-b border-border px-4 py-2">
+    <header className="flex shrink-0 items-center gap-2 border-b border-border px-2 py-2 sm:gap-3 sm:px-4">
       <div className="flex items-center gap-0.5">
         <StepButton label="Previous day" onClick={() => onStep(-1)}>
           <ChevronLeft className="size-4" />
@@ -572,23 +625,27 @@ function DayHeader({
         </StepButton>
       </div>
 
-      <h2 className="text-sm font-medium text-foreground">{label}</h2>
+      <h2 className="truncate text-sm font-medium text-foreground">
+        <span className="hidden sm:inline">{label}</span>
+        <span className="sm:hidden">{shortLabel}</span>
+      </h2>
 
       {isToday ? (
-        <span className="rounded-full bg-rain-soft px-2 py-0.5 text-[10px] font-medium text-rain">
+        <span className="shrink-0 rounded-full bg-rain-soft px-2 py-0.5 text-[10px] font-medium text-rain">
           Today
         </span>
       ) : (
         <button
           type="button"
           onClick={onToday}
-          className="text-xs text-rain underline-offset-2 hover:underline"
+          className="shrink-0 text-xs text-rain underline-offset-2 hover:underline"
         >
-          Back to today
+          <span className="hidden sm:inline">Back to today</span>
+          <span className="sm:hidden">Today</span>
         </button>
       )}
 
-      <span className="ml-auto text-xs text-muted-foreground">
+      <span className="ml-auto shrink-0 text-xs text-muted-foreground">
         {plannedMinutes === 0
           ? "Nothing planned"
           : `${hours > 0 ? `${hours}h ` : ""}${mins > 0 ? `${mins}m` : ""} planned`.trim()}
@@ -611,7 +668,7 @@ function StepButton({
       type="button"
       onClick={onClick}
       aria-label={label}
-      className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+      className="rounded-md p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
     >
       {children}
     </button>
@@ -688,6 +745,7 @@ function BlockCard({
   selected,
   onSelect,
   onOpen,
+  onMove,
   onResize,
   onRemove,
 }: {
@@ -696,6 +754,7 @@ function BlockCard({
   selected: boolean;
   onSelect: () => void;
   onOpen: () => void;
+  onMove: (startMinute: number) => void;
   onResize: (minutes: number) => void;
   onRemove: () => void;
 }) {
@@ -710,7 +769,58 @@ function BlockCard({
   const [resizing, setResizing] = useState<number | null>(null);
   const resizingRef = useRef<number | null>(null);
 
+  /** The live drag position while moving. Same ref-plus-state shape, for the same reason. */
+  const [moving, setMoving] = useState<number | null>(null);
+  const movingRef = useRef<number | null>(null);
+
+  const top = moving ?? startMin;
   const length = (resizing ?? endMin) - startMin;
+
+  /**
+   * Move the block by dragging the grip along its top edge.
+   *
+   * The card is `draggable`, and on a mouse that native drag is still what moves it. This exists
+   * because a finger never triggers it: `dragstart` is not dispatched for touch input on any
+   * mobile browser, so without a pointer-event path a block could be created on a phone and then
+   * never moved off the time it landed on.
+   *
+   * `touch-none` on the grip claims the gesture, so the grid does not scroll away underneath the
+   * drag. It is confined to the grip rather than the whole card precisely so that touching a
+   * block anywhere else still scrolls the day — blocks cover most of a working day, and a card
+   * that swallowed every touch would make the calendar feel stuck.
+   */
+  function beginMove(event: React.PointerEvent<HTMLDivElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const startY = event.clientY;
+    const target = event.currentTarget;
+    const span = endMin - startMin;
+    target.setPointerCapture(event.pointerId);
+
+    const onPointerMove = (e: PointerEvent) => {
+      const snapped = snapToSlot(startMin + (e.clientY - startY) / PX_PER_MINUTE);
+      // Clamped to the day: `moveTimeBlock` writes an instant, and a block dragged off the top
+      // would silently land on yesterday evening — off this grid, and hard to find again.
+      const next = Math.max(0, Math.min(DAY_MINUTES - span, snapped));
+      movingRef.current = next;
+      setMoving(next);
+    };
+
+    const onUp = (e: PointerEvent) => {
+      target.releasePointerCapture(e.pointerId);
+      target.removeEventListener("pointermove", onPointerMove);
+      target.removeEventListener("pointerup", onUp);
+
+      const final = movingRef.current;
+      movingRef.current = null;
+      setMoving(null);
+      if (final !== null && final !== startMin) onMove(final);
+    };
+
+    target.addEventListener("pointermove", onPointerMove);
+    target.addEventListener("pointerup", onUp);
+  }
 
   /*
    * Resize is a pointer-event drag rather than an HTML5 one. `dragstart` on the handle would be
@@ -777,7 +887,7 @@ function BlockCard({
         if (e.key === "Enter") onOpen();
       }}
       style={{
-        top: startMin * PX_PER_MINUTE,
+        top: top * PX_PER_MINUTE,
         height: Math.max(length * PX_PER_MINUTE, SLOT_MINUTES * PX_PER_MINUTE),
         left: `${(column / columns) * 100}%`,
         width: `calc(${(1 / columns) * 100}% - 2px)`,
@@ -801,7 +911,7 @@ function BlockCard({
     >
       <span className="truncate font-medium">{task ? task.title : "Orphaned block"}</span>
       <span className="text-[10px] tabular-nums text-muted-foreground">
-        {formatMinutes(startMin)}–{formatMinutes(startMin + length)}
+        {formatMinutes(top)}–{formatMinutes(top + length)}
       </span>
 
       <button
@@ -811,23 +921,44 @@ function BlockCard({
           onRemove();
         }}
         aria-label="Unschedule"
-        className="absolute right-1 top-1 hidden text-muted-foreground hover:text-priority-high group-hover:block"
+        // Revealed on hover with a mouse, permanently present without one — a touchscreen has no
+        // hover, so `group-hover` alone made unscheduling from the grid unreachable. Scoped to
+        // `pointer-fine` so the hiding only applies where hovering can undo it.
+        className="absolute right-1 top-1 p-1 text-muted-foreground hover:text-priority-high pointer-fine:hidden pointer-fine:group-hover:block"
       >
         <Trash2 className="size-3" />
       </button>
+
+      {/*
+        Top edge: move. Stops short of the right so it does not sit under the unschedule button.
+        `touch-none` claims the gesture from the grid's scroll — see `beginMove`.
+      */}
+      <div
+        onPointerDown={beginMove}
+        role="separator"
+        aria-label="Move block"
+        className="absolute left-0 right-7 top-0 h-2 cursor-grab touch-none bg-transparent hover:bg-rain/40 active:cursor-grabbing"
+      />
 
       {/* Bottom edge. `touch-none` stops a touch drag scrolling the grid instead of resizing. */}
       <div
         onPointerDown={beginResize}
         role="separator"
         aria-label="Resize block"
-        className="absolute inset-x-0 bottom-0 h-1.5 cursor-ns-resize touch-none bg-transparent hover:bg-rain/40"
+        className="absolute inset-x-0 bottom-0 h-2 cursor-ns-resize touch-none bg-transparent hover:bg-rain/40"
       />
     </div>
   );
 }
 
-/** The left rail of things you could schedule. Drag source only — no drop target. */
+/**
+ * The left rail of things you could schedule. Drag source only — no drop target.
+ *
+ * Hidden below `md`, and not replaced by a phone equivalent. Its only job is to be something to
+ * drag from, and dragging from it is exactly what does not work on a touchscreen; a 224px column
+ * of undraggable tasks would be taking a third of the screen to offer nothing. Tapping the grid
+ * opens the same picker with the same list, filtered by typing instead of by scrolling.
+ */
 function Rail({
   tasks,
   openTaskId,
@@ -840,7 +971,7 @@ function Rail({
   return (
     <aside
       aria-label="Unscheduled work"
-      className="flex w-56 shrink-0 flex-col border-r border-border bg-card"
+      className="hidden w-56 shrink-0 flex-col border-r border-border bg-card md:flex"
     >
       <header className="shrink-0 border-b border-border px-3 py-2">
         <h2 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
