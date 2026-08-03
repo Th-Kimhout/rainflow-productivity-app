@@ -36,8 +36,7 @@ export function SettingsView() {
   return (
     <div className="mx-auto max-w-3xl space-y-6 px-6 py-5">
       <header>
-        <p className="text-xs uppercase tracking-widest text-muted-foreground">PRD §7.2</p>
-        <h1 className="mt-0.5 text-lg font-semibold tracking-tight text-foreground">
+        <h1 className="text-lg font-semibold tracking-tight text-foreground">
           Data &amp; sync
         </h1>
       </header>

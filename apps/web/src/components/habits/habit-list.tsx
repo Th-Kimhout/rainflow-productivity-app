@@ -79,10 +79,7 @@ export function HabitList() {
   return (
     <div className="flex h-full flex-col">
       <header className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-6 py-3">
-        <div>
-          <p className="text-xs uppercase tracking-widest text-muted-foreground">PRD §3.4</p>
-          <h1 className="mt-0.5 text-lg font-semibold tracking-tight text-foreground">Habits</h1>
-        </div>
+        <h1 className="text-lg font-semibold tracking-tight text-foreground">Habits</h1>
 
         <div className="flex items-center gap-2">
           <button

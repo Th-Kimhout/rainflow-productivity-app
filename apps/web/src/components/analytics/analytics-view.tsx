@@ -39,8 +39,7 @@ export function AnalyticsView() {
   return (
     <div className="mx-auto max-w-4xl space-y-6 px-6 py-5">
       <header>
-        <p className="text-xs uppercase tracking-widest text-muted-foreground">PRD §3.6</p>
-        <h1 className="mt-0.5 text-lg font-semibold tracking-tight text-foreground">
+        <h1 className="text-lg font-semibold tracking-tight text-foreground">
           Weekly review
         </h1>
         <p className="mt-0.5 text-xs text-muted-foreground">
