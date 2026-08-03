@@ -140,3 +140,59 @@ test("exports a backup containing the local rows", async ({ page }) => {
   expect(backup.version).toBe(1);
   expect(backup.tables.task?.some((t) => t.title === "Back me up")).toBe(true);
 });
+
+test("blocks out time on the calendar by drawing, then by keyboard", async ({ page }) => {
+  await signIn(page, "/inbox");
+
+  await page.keyboard.press("ControlOrMeta+k");
+  await page.getByRole("textbox", { name: "Task title" }).fill("Draft the proposal");
+  await page.getByRole("textbox", { name: "Task title" }).press("Enter");
+  await expect(page.getByRole("button", { name: "Draft the proposal", exact: true })).toBeVisible();
+
+  await page.keyboard.press("g");
+  await page.keyboard.press("c");
+  await expect(page).toHaveURL(/\/calendar/);
+
+  /*
+   * Draw a range on empty grid. This is the gesture dragging from the rail cannot express:
+   * "I have this hour free, what goes in it" rather than "when does this task go".
+   */
+  const grid = page.getByRole("main").locator("div.overflow-y-auto").first();
+  const box = (await grid.boundingBox())!;
+  const x = box.x + box.width * 0.6;
+  await page.mouse.move(x, box.y + 120);
+  await page.mouse.down();
+  await page.mouse.move(x, box.y + 240, { steps: 8 });
+  await page.mouse.up();
+
+  // The range has no task yet — `time_block.task_id` is NOT NULL, so it asks rather than
+  // creating something empty.
+  const picker = page.getByRole("textbox", { name: "Filter tasks" });
+  await expect(picker).toBeFocused();
+  await picker.fill("Draft");
+  await picker.press("Enter");
+
+  /*
+   * Scoped by `data-block`, because the rail keeps the task listed after it is scheduled — a
+   * task often needs a second sitting — so a plain name lookup matches the rail item too.
+   */
+  const block = page.locator("[data-block]").filter({ hasText: "Draft the proposal" });
+  await expect(block).toBeVisible();
+
+  /*
+   * §4.2 claims the app is 100% operable without a mouse, and the calendar was the one view
+   * where that was false. A newly placed block is selected, so these act on it immediately.
+   */
+  // The card renders "<title>\n<start>–<end>", so its own text is the simplest thing that
+  // changes when the block moves.
+  const before = await block.innerText();
+
+  await page.keyboard.press("Shift+ArrowDown");
+  await expect(block).not.toHaveText(before);
+
+  await page.keyboard.press("+");
+  await page.keyboard.press("Backspace");
+  // Unscheduled, not deleted: the block leaves the grid and the task stays in the rail.
+  await expect(block).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Draft the proposal", exact: true })).toBeVisible();
+});

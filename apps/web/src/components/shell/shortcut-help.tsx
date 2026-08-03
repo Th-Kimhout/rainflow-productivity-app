@@ -36,8 +36,14 @@ const GROUPS: Array<{ title: string; keys: Array<[string, string]> }> = [
   {
     title: "Calendar",
     keys: [
-      ["[ / ]", "Previous / next day"],
+      ["[ / ] or ← →", "Previous / next day"],
       ["T", "Jump to today"],
+      ["J / K or ↑ ↓", "Select a block"],
+      ["⇧↑ / ⇧↓", "Move the block 15 min"],
+      ["+ / −", "Lengthen / shorten"],
+      ["Enter", "Open the task"],
+      ["F", "Focus on it"],
+      ["Backspace", "Unschedule"],
     ],
   },
   {

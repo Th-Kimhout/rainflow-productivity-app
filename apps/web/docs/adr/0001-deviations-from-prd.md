@@ -325,3 +325,21 @@ directory that already has one — which is every machine anyone would run these
 Every hex in §4.1 is a **Tailwind v3** value. Tailwind v4 ships those colours in oklch with slightly
 different rendered values, so the palette is defined as **hex literals** in `@theme` and never
 references `--color-slate-900` and friends.
+
+### The calendar is operable by keyboard, and drawing on it creates a block
+
+§4.2 claims the app is 100% operable without a mouse, and the calendar was the one view where that
+was false — it had day navigation and nothing else, so a block could only be created, moved, resized
+or removed by dragging. Selection (`J`/`K`), move (`⇧↑`/`⇧↓`), resize (`+`/`−`), open, focus and
+unschedule are all bound now.
+
+Left/right change the day and up/down move through blocks, rather than the reverse: the grid's own
+axis is vertical, so that is the direction the eye already reads it in.
+
+**Drawing on empty grid opens a task picker rather than creating an empty block.** `time_block.task_id`
+is `not null`, so there is nothing to create until a task is chosen — but the gesture is worth having
+because dragging from the rail can only answer "when does this task go", never "I have this hour
+free, what goes in it". A drag shorter than two slots is treated as a stray click and ignored.
+
+The grid also scrolls to an hour before the now-line on open (07:00 on other days). Opening at 00:00
+meant every visit began by scrolling past eight empty hours of night.

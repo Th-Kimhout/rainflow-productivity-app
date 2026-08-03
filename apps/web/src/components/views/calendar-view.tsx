@@ -16,12 +16,13 @@ import {
   todayKey,
 } from "@rainflow/data";
 import { ChevronLeft, ChevronRight, Trash2 } from "lucide-react";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Kbd } from "@/components/common/kbd";
 import { useClock } from "@/lib/clock";
 import { type ScheduledBlock, useDaySchedule, useSchedulableTasks } from "@/lib/data/hooks";
 import { useWriteContext } from "@/lib/data/provider";
+import { start as startFocus } from "@/lib/focus/store";
 import { PRIORITY, useKeyHandler } from "@/lib/keyboard/provider";
 import { useUrlState } from "@/lib/url-state";
 import { cn } from "@/lib/utils";
@@ -47,9 +48,17 @@ const HOUR_HEIGHT = 60 * PX_PER_MINUTE;
 const DRAG_TASK = "application/x-rainflow-task";
 const DRAG_BLOCK = "application/x-rainflow-block";
 
+/**
+ * Where the grid scrolls to when there is no now-line to aim at.
+ *
+ * Opening at 00:00 means the first thing anyone sees is eight empty hours of night, and every
+ * visit starts with a scroll. 07:00 puts the working day at the top of the viewport.
+ */
+const DEFAULT_SCROLL_HOUR = 7;
+
 export function CalendarView() {
   const { db, ctx } = useWriteContext();
-  const { day, setDay, openTask, taskId: openTaskId } = useUrlState();
+  const { day, setDay, openTask, openZen, taskId: openTaskId } = useUrlState();
 
   const schedule = useDaySchedule(day);
   const candidates = useSchedulableTasks(day);
@@ -57,7 +66,22 @@ export function CalendarView() {
   const gridRef = useRef<HTMLDivElement>(null);
   const [dropMinute, setDropMinute] = useState<number | null>(null);
 
+  /** The block the keyboard acts on. Held by id, because blocks reorder as they move. */
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  /** A range drawn on empty grid, waiting for a task to put in it. */
+  const [drawing, setDrawing] = useState<{ from: number; to: number } | null>(null);
+  const [pendingRange, setPendingRange] = useState<{ from: number; to: number } | null>(null);
+
   const isToday = day === todayKey();
+  const blocks = useMemo(() => schedule?.blocks ?? [], [schedule]);
+
+  /*
+   * Selection is RESOLVED ON READ rather than corrected in an effect. A block can vanish under
+   * the cursor — unscheduled here, or deleted on another device mid-render — and writing the
+   * correction back from an effect renders one frame with a dangling id first.
+   */
+  const selectedIndex = blocks.findIndex((b) => b.block.id === selectedId);
+  const selected = selectedIndex === -1 ? null : blocks[selectedIndex]!;
 
   /**
    * Where a pointer y-coordinate falls on the grid, in minutes.
@@ -74,6 +98,34 @@ export function CalendarView() {
     return snapToSlot((clientY - rect.top + el.scrollTop) / PX_PER_MINUTE);
   }, []);
 
+  /*
+   * Open on the working day, not on midnight. Runs when the day changes, and jumps to an hour
+   * before the now-line so the current moment sits in view with its context above it.
+   *
+   * A DOM mutation rather than state, so it does not participate in rendering at all — and it
+   * deliberately does not depend on the clock, or every tick would yank the scroll position back.
+   */
+  useEffect(() => {
+    const el = gridRef.current;
+    if (!el) return;
+    const target = isToday
+      ? (nowLineMinutes(day, new Date()) ?? DEFAULT_SCROLL_HOUR * 60) - 60
+      : DEFAULT_SCROLL_HOUR * 60;
+    el.scrollTop = Math.max(0, target * PX_PER_MINUTE);
+  }, [day, isToday]);
+
+  // Keep the keyboard selection in view as it moves.
+  useEffect(() => {
+    const el = gridRef.current;
+    if (!el || !selected) return;
+    const top = selected.startMin * PX_PER_MINUTE;
+    const bottom = selected.endMin * PX_PER_MINUTE;
+    if (top < el.scrollTop) el.scrollTop = Math.max(0, top - 40);
+    else if (bottom > el.scrollTop + el.clientHeight) {
+      el.scrollTop = bottom - el.clientHeight + 40;
+    }
+  }, [selected]);
+
   async function handleDrop(event: React.DragEvent, minute: number) {
     const blockId = event.dataTransfer.getData(DRAG_BLOCK);
     if (blockId) {
@@ -83,28 +135,157 @@ export function CalendarView() {
 
     const taskIdDropped = event.dataTransfer.getData(DRAG_TASK);
     if (taskIdDropped) {
-      await scheduleTask(db, ctx, { taskId: taskIdDropped, day, startMinute: minute });
+      const created = await scheduleTask(db, ctx, {
+        taskId: taskIdDropped,
+        day,
+        startMinute: minute,
+      });
+      setSelectedId(created.id);
     }
   }
 
+  /**
+   * Draw a new block on empty grid.
+   *
+   * The gesture people already know from every other calendar, and the one this view was missing:
+   * dragging from the rail can only answer "when does this task go", never "I have this hour free,
+   * what goes in it". `time_block.task_id` is NOT NULL, so the drawn range opens a picker rather
+   * than creating something empty — choose the time, then choose the work.
+   */
+  function beginDraw(event: React.PointerEvent<HTMLDivElement>) {
+    // Blocks own their own pointer gestures (move, resize); only empty grid draws.
+    if ((event.target as HTMLElement).closest("[data-block]")) return;
+    if (event.button !== 0) return;
+
+    const el = event.currentTarget;
+    const from = minuteAt(event.clientY);
+    el.setPointerCapture(event.pointerId);
+    setDrawing({ from, to: from + SLOT_MINUTES });
+
+    let latest = { from, to: from + SLOT_MINUTES };
+
+    const onMove = (e: PointerEvent) => {
+      const at = minuteAt(e.clientY);
+      // Dragging upward is as valid as downward; normalise so `from` is always the earlier edge.
+      latest = at < from ? { from: at, to: from } : { from, to: Math.max(at, from + SLOT_MINUTES) };
+      setDrawing(latest);
+    };
+
+    const onUp = (e: PointerEvent) => {
+      el.releasePointerCapture(e.pointerId);
+      el.removeEventListener("pointermove", onMove);
+      el.removeEventListener("pointerup", onUp);
+      setDrawing(null);
+      // A bare click is not a draw. Requiring real movement keeps a stray click on the grid from
+      // opening the picker every time.
+      if (latest.to - latest.from >= SLOT_MINUTES * 2) setPendingRange(latest);
+    };
+
+    el.addEventListener("pointermove", onMove);
+    el.addEventListener("pointerup", onUp);
+  }
+
+  async function place(taskId: string) {
+    const range = pendingRange;
+    setPendingRange(null);
+    if (!range) return;
+
+    const created = await scheduleTask(db, ctx, {
+      taskId,
+      day,
+      startMinute: range.from,
+      lengthMinutes: range.to - range.from,
+    });
+    setSelectedId(created.id);
+  }
+
   useKeyHandler(PRIORITY.view, (event) => {
-    // Day navigation. `[`/`]` because they sit together and mean "step" in most editors, with
-    // arrows as the discoverable alternative.
-    if (event.key === "[" || event.key === "ArrowLeft") {
+    // The picker owns the keyboard while it is open.
+    if (pendingRange) return false;
+
+    const key = event.key;
+
+    // ---------------------------------------------------------------- day navigation
+    // Left/right move through days; up/down are reserved for moving through blocks, which is
+    // the axis the grid itself runs along.
+    if (key === "[" || key === "ArrowLeft") {
       event.preventDefault();
       setDay(addDays(day, -1));
       return true;
     }
-    if (event.key === "]" || event.key === "ArrowRight") {
+    if (key === "]" || key === "ArrowRight") {
       event.preventDefault();
       setDay(addDays(day, 1));
       return true;
     }
-    if (event.key.toLowerCase() === "t") {
+    if (key.toLowerCase() === "t") {
       event.preventDefault();
       setDay(todayKey());
       return true;
     }
+
+    if (key === "Escape" && selected) {
+      event.preventDefault();
+      setSelectedId(null);
+      return true;
+    }
+
+    if (blocks.length === 0) return false;
+
+    // ---------------------------------------------------------------- move and resize
+    if (selected && event.shiftKey && (key === "ArrowUp" || key === "ArrowDown")) {
+      event.preventDefault();
+      const delta = key === "ArrowUp" ? -SLOT_MINUTES : SLOT_MINUTES;
+      void moveTimeBlock(db, ctx, selected.block.id, day, selected.startMin + delta);
+      return true;
+    }
+
+    if (selected && (key === "+" || key === "=" || key === "-")) {
+      event.preventDefault();
+      const length = selected.endMin - selected.startMin;
+      const delta = key === "-" ? -SLOT_MINUTES : SLOT_MINUTES;
+      // The floor is one slot: the DB requires `ends_at > starts_at`, and a block too small to
+      // see is a block you cannot select again to fix.
+      void resizeTimeBlock(db, ctx, selected.block.id, Math.max(SLOT_MINUTES, length + delta));
+      return true;
+    }
+
+    // ---------------------------------------------------------------- selection
+    if (key === "ArrowDown" || key.toLowerCase() === "j") {
+      event.preventDefault();
+      const next = selectedIndex === -1 ? 0 : Math.min(selectedIndex + 1, blocks.length - 1);
+      setSelectedId(blocks[next]!.block.id);
+      return true;
+    }
+    if (key === "ArrowUp" || key.toLowerCase() === "k") {
+      event.preventDefault();
+      const next = selectedIndex === -1 ? blocks.length - 1 : Math.max(selectedIndex - 1, 0);
+      setSelectedId(blocks[next]!.block.id);
+      return true;
+    }
+
+    if (!selected) return false;
+
+    // ---------------------------------------------------------------- act on the selection
+    if (key === "Enter") {
+      event.preventDefault();
+      if (selected.task) openTask(selected.task.id);
+      return true;
+    }
+    if (key.toLowerCase() === "f" && selected.task) {
+      // Same gesture as the lists and the matrix: start the timer and drop into zen.
+      event.preventDefault();
+      void startFocus(selected.task.id);
+      openZen(selected.task.id);
+      return true;
+    }
+    if (key === "Backspace" || key === "Delete") {
+      event.preventDefault();
+      void softDelete(db, ctx, "time_block", selected.block.id);
+      setSelectedId(null);
+      return true;
+    }
+
     return false;
   });
 
@@ -124,6 +305,7 @@ export function CalendarView() {
         <div
           ref={gridRef}
           className="relative min-h-0 flex-1 overflow-y-auto"
+          onPointerDown={beginDraw}
           onDragOver={(e) => {
             /*
              * `getData` is unreadable during dragover (the spec's protected mode), but `types`
@@ -149,10 +331,15 @@ export function CalendarView() {
             void handleDrop(e, minute);
           }}
         >
-          <div className="relative" style={{ height: DAY_MINUTES * PX_PER_MINUTE }}>
+          <div
+            className="relative select-none"
+            style={{ height: DAY_MINUTES * PX_PER_MINUTE }}
+          >
             <HourLines />
 
             {dropMinute !== null && <DropGuide minute={dropMinute} />}
+            {drawing && <DrawGhost from={drawing.from} to={drawing.to} />}
+            {pendingRange && <DrawGhost from={pendingRange.from} to={pendingRange.to} pending />}
 
             {/*
               Blocks live in their own lane, inset past the hour gutter. That inset is what lets
@@ -161,11 +348,13 @@ export function CalendarView() {
               multi-column arithmetic wrong even faster.
             */}
             <div className="absolute inset-y-0 left-14 right-2">
-              {schedule?.blocks.map((b) => (
+              {blocks.map((b) => (
                 <BlockCard
                   key={b.block.id}
                   scheduled={b}
                   active={b.task?.id === openTaskId}
+                  selected={b.block.id === selectedId}
+                  onSelect={() => setSelectedId(b.block.id)}
                   onOpen={() => b.task && openTask(b.task.id)}
                   onResize={(mins) => void resizeTimeBlock(db, ctx, b.block.id, mins)}
                   onRemove={() => void softDelete(db, ctx, "time_block", b.block.id)}
@@ -177,19 +366,165 @@ export function CalendarView() {
           </div>
         </div>
 
-        <footer className="flex shrink-0 items-center gap-3 border-t border-border px-4 py-1.5 text-[10px] text-muted-foreground">
+        {pendingRange && (
+          <TaskPicker
+            tasks={candidates ?? []}
+            from={pendingRange.from}
+            to={pendingRange.to}
+            onPick={(id) => void place(id)}
+            onCancel={() => setPendingRange(null)}
+          />
+        )}
+
+        <footer className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-t border-border px-4 py-1.5 text-[10px] text-muted-foreground">
           <span className="flex items-center gap-1">
             <Kbd>[</Kbd>
-            <Kbd>]</Kbd> change day
+            <Kbd>]</Kbd> day
           </span>
           <span className="flex items-center gap-1">
             <Kbd>T</Kbd> today
           </span>
-          <span className="ml-auto">
-            drag a task onto the grid, drag a block to move it, drag its edge to resize
+          <span className="flex items-center gap-1">
+            <Kbd>J</Kbd>
+            <Kbd>K</Kbd> select
           </span>
+          <span className="flex items-center gap-1">
+            <Kbd>⇧↑</Kbd>
+            <Kbd>⇧↓</Kbd> move
+          </span>
+          <span className="flex items-center gap-1">
+            <Kbd>+</Kbd>
+            <Kbd>−</Kbd> resize
+          </span>
+          <span className="flex items-center gap-1">
+            <Kbd>Enter</Kbd> open
+          </span>
+          <span className="flex items-center gap-1">
+            <Kbd>F</Kbd> focus
+          </span>
+          <span className="ml-auto">drag on the grid to block out time</span>
         </footer>
       </div>
+    </div>
+  );
+}
+
+/** The range being drawn, or the one waiting for a task. */
+function DrawGhost({ from, to, pending = false }: { from: number; to: number; pending?: boolean }) {
+  return (
+    <div
+      className={cn(
+        "pointer-events-none absolute left-14 right-2 z-20 rounded-md border-2 border-dashed",
+        pending ? "border-rain bg-rain/10" : "border-rain/70 bg-rain/5",
+      )}
+      style={{ top: from * PX_PER_MINUTE, height: Math.max(to - from, SLOT_MINUTES) * PX_PER_MINUTE }}
+    >
+      <span className="absolute -top-2.5 left-2 rounded bg-rain px-1 text-[10px] font-medium tabular-nums text-background">
+        {formatMinutes(from)}–{formatMinutes(to)}
+      </span>
+    </div>
+  );
+}
+
+/**
+ * Choose what goes in a drawn range.
+ *
+ * Type-to-filter with Enter taking the first match, because the alternative — a scroll-and-click
+ * list — makes the whole draw gesture slower than dragging from the rail, and then there would be
+ * no reason to have built it.
+ */
+function TaskPicker({
+  tasks,
+  from,
+  to,
+  onPick,
+  onCancel,
+}: {
+  tasks: readonly TaskRow[];
+  from: number;
+  to: number;
+  onPick: (taskId: string) => void;
+  onCancel: () => void;
+}) {
+  const [query, setQuery] = useState("");
+  const matches = tasks
+    .filter((t) => t.title.toLowerCase().includes(query.trim().toLowerCase()))
+    .slice(0, 6);
+
+  // Overlay priority, and `whenTyping` because the input has focus the whole time this is open.
+  useKeyHandler(
+    PRIORITY.overlay,
+    (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onCancel();
+        return true;
+      }
+      return false;
+    },
+    { whenTyping: true },
+  );
+
+  return (
+    <div className="shrink-0 border-t border-border bg-card p-3">
+      <div className="mb-2 flex items-baseline justify-between">
+        <p className="text-xs text-foreground">
+          What goes in{" "}
+          <span className="tabular-nums text-rain">
+            {formatMinutes(from)}–{formatMinutes(to)}
+          </span>
+          ?
+        </p>
+        <button
+          type="button"
+          onClick={onCancel}
+          className="text-[10px] text-muted-foreground hover:text-foreground"
+        >
+          Cancel <Kbd>Esc</Kbd>
+        </button>
+      </div>
+
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          const first = matches[0];
+          if (first) onPick(first.id);
+        }}
+      >
+        <input
+          autoFocus
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Filter tasks…"
+          aria-label="Filter tasks"
+          className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs text-foreground outline-none placeholder:text-muted-foreground focus:ring-1 focus:ring-rain"
+        />
+      </form>
+
+      <ul className="mt-2 flex flex-wrap gap-1">
+        {matches.length === 0 ? (
+          <li className="px-1 text-[10px] text-muted-foreground">
+            {tasks.length === 0 ? "Nothing open to schedule." : "No match."}
+          </li>
+        ) : (
+          matches.map((task, i) => (
+            <li key={task.id}>
+              <button
+                type="button"
+                onClick={() => onPick(task.id)}
+                className={cn(
+                  "max-w-56 truncate rounded-md px-2 py-1 text-xs transition-colors",
+                  i === 0
+                    ? "bg-rain text-background"
+                    : "text-foreground ring-1 ring-border hover:bg-accent",
+                )}
+              >
+                {task.title}
+              </button>
+            </li>
+          ))
+        )}
+      </ul>
     </div>
   );
 }
@@ -350,12 +685,16 @@ function NowLine({ day }: { day: string }) {
 function BlockCard({
   scheduled,
   active,
+  selected,
+  onSelect,
   onOpen,
   onResize,
   onRemove,
 }: {
   scheduled: ScheduledBlock;
   active: boolean;
+  selected: boolean;
+  onSelect: () => void;
   onOpen: () => void;
   onResize: (minutes: number) => void;
   onRemove: () => void;
@@ -417,13 +756,22 @@ function BlockCard({
 
   return (
     <div
+      // Marks this subtree as owning its own pointer gestures, so a drag that starts here draws
+      // nothing — see `beginDraw`.
+      data-block
       draggable
       onDragStart={(e) => {
         e.dataTransfer.setData(DRAG_BLOCK, block.id);
         e.dataTransfer.effectAllowed = "move";
       }}
-      onClick={onOpen}
+      // Clicking both selects and opens: selection is what the keyboard then acts on, and
+      // requiring a separate click to "arm" a block people have already clicked reads as a bug.
+      onClick={() => {
+        onSelect();
+        onOpen();
+      }}
       role="button"
+      aria-pressed={selected}
       tabIndex={0}
       onKeyDown={(e) => {
         if (e.key === "Enter") onOpen();
@@ -439,6 +787,9 @@ function BlockCard({
         // A square edge is the signal that the block continues onto the neighbouring day.
         clippedStart && "rounded-t-none",
         clippedEnd && "rounded-b-none",
+        // The keyboard cursor. A ring rather than a fill, so it reads on top of whichever of the
+        // four background treatments below the block already has.
+        selected && "z-20 ring-2 ring-rain ring-offset-1 ring-offset-background",
         task === null
           ? "border-dashed border-muted-foreground/40 bg-muted/40 text-muted-foreground"
           : active
