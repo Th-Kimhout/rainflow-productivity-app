@@ -10,6 +10,10 @@
     "lint": "pnpm --filter web lint",
     "test": "pnpm --recursive --if-present test",
     "test:tz": "pnpm --recursive --if-present test:tz",
-    "typecheck": "pnpm --recursive --if-present typecheck"
+    "typecheck": "pnpm --recursive --if-present typecheck",
+    "test:e2e": "playwright test --config apps/web/playwright.config.ts"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.62.0"
   }
 }

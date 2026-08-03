@@ -6,7 +6,11 @@ settings:
 
 importers:
 
-  .: {}
+  .:
+    devDependencies:
+      '@playwright/test':
+        specifier: ^1.62.0
+        version: 1.62.0
 
   apps/web:
     dependencies:
@@ -71,9 +75,6 @@ importers:
         specifier: ^1.4.0
         version: 1.4.0
     devDependencies:
-      '@playwright/test':
-        specifier: ^1.62.0
-        version: 1.62.0
       '@tailwindcss/postcss':
         specifier: ^4
         version: 4.3.3
