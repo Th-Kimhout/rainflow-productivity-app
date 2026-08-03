@@ -69,30 +69,33 @@ export function MobileNav() {
 }
 
 /**
- * Capture, raised out of the bar.
+ * Capture, sitting in the bar.
  *
- * It breaks the row's rhythm on purpose: it is the only control here that acts rather than
- * navigates, and on a phone it is the only route to creating a task at all. The lift is
- * `-translate-y` inside a `relative` bar rather than a `fixed` overlay, so it stays anchored to
- * the bar as the safe-area padding changes underneath it.
+ * It still breaks the row's rhythm — bigger, filled, and the only control here that acts rather
+ * than navigates — but it does so within the bar's own bounds. An earlier version lifted it clear
+ * of the top edge, and installed to the homescreen that read as a stray circle floating over the
+ * sync row rather than as part of the bar: there is no browser chrome above to give it a frame,
+ * so the overhang had nothing to sit against.
+ *
+ * The prominence now comes entirely from size and glow, which is what a bottom-bar FAB usually
+ * does anyway. Nothing overlaps, so the ring that used to punch a hole in the bar is gone too.
  */
 function CaptureButton() {
   return (
-    <div className="flex flex-1 items-start justify-center">
+    <div className="flex flex-1 items-center justify-center">
       <button
         type="button"
         onClick={openCapture}
         aria-label="Capture a task"
         className={cn(
-          "-translate-y-3 flex size-14 items-center justify-center rounded-full",
-          "bg-rain text-background ring-4 ring-sidebar",
-          // Two shadows doing different jobs: a tight one to seat it above the bar, and a wide
+          "flex size-12 items-center justify-center rounded-full bg-rain text-background",
+          // Two shadows doing different jobs: a tight one to lift it off the bar, and a wide
           // tinted one that reads as the button glowing rather than casting.
-          "shadow-[0_4px_14px_rgba(56,189,248,0.45),0_0_28px_rgba(56,189,248,0.35)]",
+          "shadow-[0_2px_10px_rgba(56,189,248,0.45),0_0_24px_rgba(56,189,248,0.35)]",
           "transition-transform duration-150 active:scale-90",
         )}
       >
-        <Plus className="size-7" strokeWidth={2.5} />
+        <Plus className="size-6" strokeWidth={2.5} />
       </button>
     </div>
   );

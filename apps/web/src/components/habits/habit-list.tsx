@@ -114,8 +114,12 @@ export function HabitList() {
         {habits.length === 0 && !creating ? (
           <div className="px-6 py-10 text-center">
             <p className="text-sm text-muted-foreground">No habits yet.</p>
-            <p className="mt-2 text-xs text-muted-foreground">
+            {/* Same reason as the task list: no keyboard, no `N`. The button is in the header. */}
+            <p className="mt-2 hidden text-xs text-muted-foreground sm:block">
               Press <Kbd>N</Kbd> to add one.
+            </p>
+            <p className="mt-2 text-xs text-muted-foreground sm:hidden">
+              Use <span className="font-medium text-rain">New habit</span> above.
             </p>
           </div>
         ) : (

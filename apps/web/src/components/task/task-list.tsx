@@ -97,8 +97,16 @@ export function TaskList({
     return (
       <div className="px-4 py-10 text-center sm:px-6">
         <p className="text-sm text-muted-foreground">{emptyMessage}</p>
-        <p className="mt-2 text-xs text-muted-foreground">
+        {/*
+          The advice has to match the hardware. On a phone there is no `C` and no ⌘K — telling
+          someone to press a key they do not have, while the button that does the job sits at the
+          bottom of the screen, is worse than saying nothing.
+        */}
+        <p className="mt-2 hidden text-xs text-muted-foreground sm:block">
           Press <Kbd>C</Kbd> or <Kbd>⌘K</Kbd> to capture one.
+        </p>
+        <p className="mt-2 text-xs text-muted-foreground sm:hidden">
+          Tap <span className="font-medium text-rain">＋</span> below to capture one.
         </p>
       </div>
     );
