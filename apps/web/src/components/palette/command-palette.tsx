@@ -107,9 +107,15 @@ export function CommandPalette() {
 
   return (
     <div
-      // `dvh`, and a shallower drop on a phone: the software keyboard eats the bottom half of
-      // the screen the instant this opens, so 15% of a *large* viewport puts the input under it.
-      className="fixed inset-0 z-50 flex items-start justify-center bg-background/70 p-4 pt-[8dvh] backdrop-blur-sm sm:pt-[15dvh]"
+      /*
+       * `dvh`, and a shallower drop on a phone: the software keyboard eats the bottom half of the
+       * screen the instant this opens, so 15% of a *large* viewport puts the input under it.
+       *
+       * Floored at the status-bar inset, because this is `fixed` and so escapes the body's
+       * padding like every other overlay here. 8dvh clears a notch with room to spare but only
+       * ~11px of a Dynamic Island, which is close enough to touching to be worth removing.
+       */
+      className="fixed inset-0 z-50 flex items-start justify-center bg-background/70 p-4 pt-[max(8dvh,calc(env(safe-area-inset-top)+1rem))] backdrop-blur-sm sm:pt-[15dvh]"
       onClick={close}
       role="presentation"
     >

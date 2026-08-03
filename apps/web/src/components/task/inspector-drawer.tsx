@@ -82,12 +82,28 @@ export function InspectorDrawer() {
         className="fixed inset-0 z-30 bg-background/60 backdrop-blur-sm xl:hidden"
       />
 
+      {/*
+       * THE INSETS ARE REPEATED HERE ON PURPOSE. `<body>` already pads for the status bar, and a
+       * `fixed` element is positioned against the viewport rather than the body box — so it
+       * escapes that padding completely. Installed to the homescreen, where the app runs under
+       * the clock and the home indicator, that put the quadrant label behind the time and the
+       * Focus button behind the home bar.
+       *
+       * Dropped at `xl`, where the drawer is a static pane inside the already-padded body and
+       * applying them again would double the gap.
+       *
+       * `overflow-hidden` rather than `overflow-y-auto`: the scroll moved to the middle section
+       * below, so the title and the Focus/Delete footer stay put instead of scrolling away — and
+       * so nothing slides up into the status bar padding, which is what a scroll container does
+       * with its own padding-top.
+       */}
       <aside
         aria-label="Task details"
         className={
-          "fixed inset-y-0 right-0 z-30 flex w-full max-w-md flex-col overflow-y-auto " +
+          "fixed inset-y-0 right-0 z-30 flex w-full max-w-md flex-col overflow-hidden " +
           "border-l border-border bg-card shadow-2xl " +
-          "xl:static xl:z-auto xl:w-80 xl:max-w-none xl:shrink-0 xl:shadow-none"
+          "pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)] " +
+          "xl:static xl:z-auto xl:w-80 xl:max-w-none xl:shrink-0 xl:pb-0 xl:pt-0 xl:shadow-none"
         }
       >
           {task ? (
@@ -149,7 +165,7 @@ function InspectorBody({ task, onClose }: { task: TaskRow; onClose: () => void }
 
   return (
     <>
-      <header className="flex items-start justify-between gap-2 border-b border-border p-4">
+      <header className="flex shrink-0 items-start justify-between gap-2 border-b border-border p-4">
         <div className="min-w-0 flex-1">
           <p className="text-xs uppercase tracking-widest text-muted-foreground">
             {QUADRANT_LABELS[quadrant]}
@@ -173,7 +189,8 @@ function InspectorBody({ task, onClose }: { task: TaskRow; onClose: () => void }
         </button>
       </header>
 
-      <div className="flex-1 space-y-5 p-4">
+      {/* The only scrolling part, so the title above and the actions below stay reachable. */}
+      <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-4">
         {/* Eisenhower — the only stored priority facts (ADR 0001 decision 9). */}
         <section className="space-y-2">
           <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
@@ -281,7 +298,7 @@ function InspectorBody({ task, onClose }: { task: TaskRow; onClose: () => void }
         <SubtaskTree parent={task} />
       </div>
 
-      <footer className="flex items-center justify-between gap-2 border-t border-border p-4">
+      <footer className="flex shrink-0 items-center justify-between gap-2 border-t border-border p-4">
         <button
           type="button"
           onClick={() => {

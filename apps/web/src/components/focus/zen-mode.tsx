@@ -75,12 +75,17 @@ export function ZenMode() {
   const onThisTask = state.taskId === zenTaskId;
 
   return (
-    <div className="fixed inset-0 z-40 flex flex-col items-center justify-center gap-6 bg-background px-4 sm:gap-8">
+    // Same escape as the inspector: `fixed` is positioned against the viewport, so the body's
+    // safe-area padding does not apply and the app runs under the clock once installed.
+    <div className="fixed inset-0 z-40 flex flex-col items-center justify-center gap-6 bg-background px-4 pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)] sm:gap-8">
       <button
         type="button"
         onClick={closeZen}
         aria-label="Leave zen mode"
-        className="absolute right-4 top-4 rounded-md p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+        // Its own inset, because an absolutely positioned child is laid out against the
+        // containing block's PADDING BOX — the parent's padding-top does not move it down, so
+        // this would sit under the status bar however much the container padded itself.
+        className="absolute right-4 top-[calc(1rem+env(safe-area-inset-top))] rounded-md p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
       >
         <Minimize2 className="size-4" />
       </button>
