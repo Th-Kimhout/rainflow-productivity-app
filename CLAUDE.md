@@ -44,6 +44,9 @@ done
 After a schema change, regenerate types or `types.assert.ts` will fail the build — see
 `supabase/README.md` for the exact command.
 
+App icons are generated, not drawn: `node apps/web/scripts/make-icons.mjs` (no image dependency —
+it writes PNGs with `node:zlib`). Only needed if §4.1's palette changes.
+
 ## Architecture
 
 ```

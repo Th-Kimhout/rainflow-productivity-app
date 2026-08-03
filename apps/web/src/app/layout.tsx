@@ -25,6 +25,28 @@ export const metadata: Metadata = {
   title: "RainFlow",
   description: "Personal productivity platform — tasks, timeboxing, focus, and habits.",
   applicationName: "RainFlow",
+  /*
+   * Homescreen launch. `capable` emits `apple-mobile-web-app-capable`, which is what actually
+   * makes iOS run this without Safari's chrome — the manifest's `display: standalone` is only
+   * honoured from iOS 17, and this is the part that has worked for a decade.
+   *
+   * `black-translucent` puts the app's own background under the status bar rather than leaving a
+   * light strip above a slate-900 canvas. It comes with an obligation, discharged on <body>: the
+   * page now extends into the status bar, so the top has to pad itself with
+   * `env(safe-area-inset-top)` or the first row of every header sits under the clock.
+   */
+  appleWebApp: {
+    capable: true,
+    title: "RainFlow",
+    statusBarStyle: "black-translucent",
+  },
+  /*
+   * `capable: true` above emits only the standardised `mobile-web-app-capable` in Next 16, and
+   * the Apple-prefixed name is what iOS honoured for a decade before adopting it. Emitting both
+   * costs one tag; getting it wrong costs standalone mode, and with it the `maximum-scale` cap —
+   * which Safari only respects when installed. Checked against the built HTML, not assumed.
+   */
+  other: { "apple-mobile-web-app-capable": "yes" },
 };
 
 export const viewport: Viewport = {
@@ -39,11 +61,21 @@ export const viewport: Viewport = {
    */
   viewportFit: "cover",
   /*
-   * Deliberately NOT capping `maximumScale`. It is the usual one-line cure for iOS zooming into
-   * a focused input, and it works by disabling pinch-zoom for everyone, permanently. The cure is
-   * in globals.css instead: form controls go to 16px on phone widths, which is the size iOS is
-   * actually asking for.
+   * NO ZOOM. This is the fix for iOS magnifying the page whenever a control smaller than 16px
+   * takes focus — and never zooming back out, so one tap on a filter box leaves the app
+   * permanently enlarged and scrolling sideways.
+   *
+   * It is normally the wrong fix, because it takes pinch-zoom away from everyone to solve one
+   * app's problem. Here it is the right one: RainFlow is single-user, installed to a homescreen,
+   * and its own 12–14px type (§4.1) is the thing being protected.
+   *
+   * IT ONLY WORKS INSTALLED. Safari has ignored `maximum-scale` since iOS 10 and always permits
+   * pinch-zoom in a tab; the standalone web view honours it. So a Safari tab still needs the
+   * 16px-controls rule, which is why globals.css keeps that rule scoped to `display-mode:
+   * browser` rather than dropping it.
    */
+  maximumScale: 1,
+  userScalable: false,
 };
 
 export default function RootLayout({
@@ -70,9 +102,16 @@ export default function RootLayout({
        *
        * `overflow-hidden` then makes "the page never scrolls, panes do" structural rather than
        * incidental. Anything that needs to scroll says so.
+       *
+       * The top inset is the other half of `statusBarStyle: "black-translucent"`: installed to a
+       * homescreen the page runs edge to edge, under the clock and the notch, so it has to hold
+       * that space back itself. Zero everywhere else, and inside the height rather than added to
+       * it, because `border-box` is Tailwind's default.
        */
       }
-      <body className="flex h-dvh flex-col overflow-hidden">{children}</body>
+      <body className="flex h-dvh flex-col overflow-hidden pt-[env(safe-area-inset-top)]">
+        {children}
+      </body>
     </html>
   );
 }

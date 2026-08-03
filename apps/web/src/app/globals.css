@@ -198,15 +198,22 @@
  * zoom back out when you leave the field — so one tap on a filter box leaves the app permanently
  * magnified and horizontally scrolling.
  *
- * The UI is 12–14px throughout on purpose (§4.1), so the fix is scoped to form controls, and
- * only at phone widths. Checkboxes and radios are excluded because font-size drives their
- * rendered box on some engines, and a 16px checkbox is a different design.
+ * INSTALLED TO THE HOMESCREEN, `maximum-scale=1` in the layout's viewport handles this, and the
+ * UI keeps its intended 12–14px type (§4.1). That cap is the better fix here and is unavailable
+ * anywhere else: Safari has ignored `maximum-scale` since iOS 10, so a tab always permits zoom.
+ *
+ * Hence `display-mode: browser`. In a Safari tab there is no cap, so controls go to 16px — the
+ * size iOS is actually asking for — and the page stays put. Launched standalone the query is
+ * false, the rule does not apply, and nothing is inflated for a problem that cannot occur.
+ *
+ * Checkboxes and radios are excluded because font-size drives their rendered box on some engines,
+ * and a 16px checkbox is a different design.
  *
  * DELIBERATELY UNLAYERED. Tailwind's `utilities` layer beats its `base` layer, so a rule written
  * inside `@layer base` loses to every `text-xs` in the app and silently does nothing. Unlayered
  * CSS outranks all layered CSS regardless of specificity, which is the one placement that works.
  */
-@media (max-width: 767px) {
+@media (max-width: 767px) and (display-mode: browser) {
   input:not([type="checkbox"]):not([type="radio"]),
   select,
   textarea {
